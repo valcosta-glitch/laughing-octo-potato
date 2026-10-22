@@ -132,6 +132,39 @@ def checar_pavimento(pav, vistas, erros, avisos):
             if fim > comprimento(parede) + 1e-6:
                 erros.append(f"móvel '{m['id']}': passa do fim da parede '{parede['id']}'")
 
+    # móveis que ocupam o mesmo espaço (mesma parede, intervalos de s e de z se cruzam)
+    movs = pav.get("mobiliario", [])
+    for i in range(len(movs)):
+        for j in range(i + 1, len(movs)):
+            a, b = movs[i], movs[j]
+            if a["apoio"]["parede_id"] != b["apoio"]["parede_id"]:
+                continue
+            sa0 = a["apoio"]["distancia_do_inicio_mm"]
+            sa1 = sa0 + a["parametros"].get("largura_mm", 0)
+            sb0 = b["apoio"]["distancia_do_inicio_mm"]
+            sb1 = sb0 + b["parametros"].get("largura_mm", 0)
+            za0 = a["apoio"].get("elevacao_mm", 0)
+            za1 = za0 + a["parametros"].get("altura_mm", 0)
+            zb0 = b["apoio"].get("elevacao_mm", 0)
+            zb1 = zb0 + b["parametros"].get("altura_mm", 0)
+            if min(sa1, sb1) - max(sa0, sb0) > 1e-6 and min(za1, zb1) - max(za0, zb0) > 1e-6:
+                erros.append(f"móveis '{a['id']}' e '{b['id']}' se sobrepõem na parede '{a['apoio']['parede_id']}'")
+
+    # móvel que cruza porta ou janela da mesma parede (aviso: pode ser intencional, ex. aéreo acima da janela)
+    for m in movs:
+        sm0 = m["apoio"]["distancia_do_inicio_mm"]
+        sm1 = sm0 + m["parametros"].get("largura_mm", 0)
+        zm0 = m["apoio"].get("elevacao_mm", 0)
+        zm1 = zm0 + m["parametros"].get("altura_mm", 0)
+        for ab in pav.get("aberturas", []):
+            if ab["parede_id"] != m["apoio"]["parede_id"]:
+                continue
+            za0 = ab.get("peitoril_mm", 0)
+            za1 = za0 + ab["altura_mm"]
+            if (min(sm1, ab["posicao_mm"] + ab["largura_mm"]) - max(sm0, ab["posicao_mm"]) > 1e-6
+                    and min(zm1, za1) - max(zm0, za0) > 1e-6):
+                avisos.append(f"móvel '{m['id']}' cruza a abertura '{ab['id']}'")
+
     ids_alvo = (
         set(paredes)
         | {m["id"] for m in pav.get("mobiliario", [])}

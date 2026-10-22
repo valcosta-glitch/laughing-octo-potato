@@ -82,6 +82,15 @@ def montar_moveis(dados):
     return saida
 
 
+def gerar_script(dados):
+    """Script único para o build_model do conector a partir do JSON intermediário já validado."""
+    partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n",
+              "moveis = " + json.dumps(montar_moveis(dados), ensure_ascii=False, indent=4) + "\n"]
+    for nome in MODULOS:
+        partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
+    return "\n".join(partes)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -96,11 +105,7 @@ def main():
             print(f"ERRO: {p}", file=sys.stderr)
         return 1
 
-    partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n",
-              "moveis = " + json.dumps(montar_moveis(dados), ensure_ascii=False, indent=4) + "\n"]
-    for nome in MODULOS:
-        partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
-    script = "\n".join(partes)
+    script = gerar_script(dados)
     if len(sys.argv) > 2:
         Path(sys.argv[2]).write_text(script, encoding="utf-8")
         print(f"OK: {sys.argv[2]} ({len(script)} caracteres)")

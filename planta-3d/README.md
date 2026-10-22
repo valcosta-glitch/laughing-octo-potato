@@ -8,8 +8,9 @@ Esquema do JSON que fica entre a **leitura da planta/corte** (DXF ou IA) e o **r
 schema/projeto.schema.json     esquema (JSON Schema 2020-12)
 exemplos/cozinha-simples.json  cozinha 4,00 x 3,00 m com porta, janela, balcão, gaveteiro e aéreo
 tools/validar.py               valida esquema + coerência geométrica
+tools/planta_para_skp.py       DA PLANTA DXF AO SCRIPT DO SKETCHUP, num comando (começa por aqui)
 tools/dxf_para_json.py         converte uma planta DXF simples neste JSON
-tools/gerar_dxf_exemplo.py     gera exemplos/cozinha-planta.dxf
+tools/gerar_dxf_exemplo.py     gera exemplos/cozinha-planta.dxf e exemplos/sala-L-planta.dxf
 tools/gerar_script_sketchup.py JSON -> script para o conector Trimble SketchUp
 renderer/sketchup_paredes.py   paredes com vãos de porta/janela (roda no sandbox do conector)
 renderer/sketchup_comum.py     funções compartilhadas (extrusão, prisma, validação de sólidos)
@@ -50,7 +51,30 @@ python3 tools/validar.py exemplos/cozinha-simples.json
 
 Além do esquema, o validador confere: calibração coerente, ids únicos, aberturas dentro da parede e sem sobreposição, contorno do ambiente fechado, móvel dentro da parede de apoio, área declarada x calculada (aviso se divergir mais de 5%) e corte com plano definido.
 
-## Converter um DXF
+## Da planta DXF ao SketchUp, num comando
+
+```bash
+pip install -r requirements.txt
+python3 tools/planta_para_skp.py exemplos/sala-L-planta.dxf --saida-dir saida --calibracao 0,0,600,0,6000
+```
+
+Escreve `saida/projeto.json` (confira os valores marcados `inferida`) e `saida/script_sketchup.py`. Cole o script em `build_model` (com `clean: true`) do conector Trimble SketchUp e depois use `save_model`. O comando para com erro, sem escrever nada, se a conversão ou a validação falhar.
+
+Convenção de camadas do DXF (sem diferenciar maiúsculas):
+
+| Camada | Conteúdo |
+|---|---|
+| `PAREDES` | linhas ou polilinhas sobre o **eixo** das paredes (um contorno fechado) |
+| `PORTAS` / `JANELAS` | uma linha por vão, apoiada sobre a parede |
+| `MOVEIS_<BLOCO>` | um **retângulo fechado** por móvel, com a face de trás junto à parede (até 150 mm) e alinhado a ela |
+
+Blocos: `MOVEIS_BALCAO_2_PORTAS`, `MOVEIS_AEREO_2_PORTAS`, `MOVEIS_GAVETEIRO_3_GAVETAS`. Largura e profundidade vêm do retângulo; altura (870 / 700 / 870 mm), chapa (18 / 15 / 18 mm), zócalo e elevação (aéreo a 1400 mm) são **padrões do bloco** (`BLOCOS_PADRAO` em `tools/dxf_para_json.py`), não vêm do desenho. A parede de apoio é descoberta pela geometria.
+
+Testado de ponta a ponta com a cozinha (mm, antihorária) e com `sala-L-planta.dxf` (em **cm**, desenhada no sentido **horário**, com parede reentrante, 3 aberturas e 5 móveis): o conversor reorienta o contorno, converte a unidade e ancora os móveis; o script rodou no conector com 68 peças sólidas verificadas e sem problemas. O que não é validado: se as medidas desenhadas estão certas (isso é do projeto), e a aparência das cenas (ver abaixo).
+
+O validador recusa móveis sobrepostos na mesma parede e avisa quando um móvel cruza uma porta ou janela.
+
+## Converter um DXF (só até o JSON)
 
 ```bash
 pip install -r requirements.txt
@@ -96,7 +120,7 @@ Limites: usa só o primeiro pavimento; só os três blocos acima têm desenho; a
 
 ## Limitações conhecidas (versão 0.1.0)
 
-- O conversor aceita um único contorno fechado. Várias peças, paredes que se cruzam em T e paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
+- O conversor aceita um único contorno fechado. Móveis só encostados numa parede e alinhados a ela (sem canto em L de móveis, ilhas nem móveis girados). Várias peças, paredes que se cruzam em T e paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
 - Polilinhas com arco são recusadas. Blocos (`INSERT`) de porta/janela e cotas escritas (OCR) não são lidos.
 
 - Só paredes retas; paredes curvas não estão previstas.

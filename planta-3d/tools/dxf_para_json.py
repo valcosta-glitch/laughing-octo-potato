@@ -5,14 +5,18 @@ Convenção de camadas (nomes sem diferenciar maiúsculas):
   PAREDES  linhas ou polilinhas sobre o EIXO das paredes
   PORTAS   uma linha por porta, cobrindo o vão, apoiada sobre a parede
   JANELAS  uma linha por janela, cobrindo o vão, apoiada sobre a parede
+  MOVEIS_<BLOCO>  um retângulo fechado (LWPOLYLINE de 4 pontos) por móvel, com a face de trás junto
+           à parede; <BLOCO> é um bloco da biblioteca: MOVEIS_BALCAO_2_PORTAS, MOVEIS_AEREO_2_PORTAS,
+           MOVEIS_GAVETEIRO_3_GAVETAS. Largura e profundidade vêm do retângulo; altura, chapa e
+           elevação são padrões do bloco (BLOCOS_PADRAO).
 
 Uso:
   python3 dxf_para_json.py planta.dxf saida.json [--unidade mm|cm|m]
       [--espessura 150] [--pe-direito 2700]
       [--calibracao x1,y1,x2,y2,medida_mm]
 
-Limites desta versão: só paredes retas, um único contorno fechado (uma peça), alturas
-de abertura padrão (a leitura do corte vem em outra fase). O que não vem do desenho
+Limites desta versão: só paredes retas, um único contorno fechado (uma peça), móveis só
+encostados (até 150 mm) numa parede e alinhados a ela, alturas de abertura padrão (a leitura do corte vem em outra fase). O que não vem do desenho
 sai marcado com origem 'inferida' para a tela de conferência.
 """
 import argparse
@@ -34,6 +38,15 @@ ALTURA_PORTA_MM = 2100
 ALTURA_JANELA_MM = 1000
 PEITORIL_JANELA_MM = 1100
 CONFIANCA_INFERIDA = 0.5
+
+# Padrões por bloco (mm). "elevacao_mm" vai para o apoio; o resto vira "parametros".
+BLOCOS_PADRAO = {
+    "balcao_2_portas": {"altura_mm": 870, "portas": 2, "espessura_chapa_mm": 18, "socalo_mm": 100, "elevacao_mm": 0},
+    "aereo_2_portas": {"altura_mm": 700, "portas": 2, "espessura_chapa_mm": 15, "elevacao_mm": 1400},
+    "gaveteiro_3_gavetas": {"altura_mm": 870, "gavetas": 3, "espessura_chapa_mm": 18, "socalo_mm": 100, "elevacao_mm": 0},
+}
+ANCORA_MAX_MM = 150.0     # distância máxima da face de trás do móvel até a face interna da parede
+PARALELO_GRAUS = 2.0      # tolerância de alinhamento do retângulo com a parede
 
 
 class ErroConversao(Exception):
@@ -178,6 +191,97 @@ def construir_aberturas(msp, camada, tipo, paredes, espessura, fator, avisos):
     return saida
 
 
+def retangulo_da_entidade(e, fator):
+    """Quatro cantos (mm) de um retângulo fechado, ou None."""
+    t = e.dxftype()
+    if t == "LWPOLYLINE" and e.closed:
+        pts = [(p[0] * fator, p[1] * fator) for p in e.get_points("xy")]
+    elif t == "POLYLINE" and e.is_closed:
+        pts = [(v.dxf.location.x * fator, v.dxf.location.y * fator) for v in e.vertices]
+    else:
+        return None
+    return pts if len(pts) == 4 else None
+
+
+def ancorar_movel(pts, paredes):
+    """Acha a parede de apoio do retângulo. Retorna (|omin|, parede, smin, smax, omin, omax) ou None.
+
+    s = distância ao longo da parede a partir de 'inicio'; o = distância à face interna (para dentro)."""
+    melhor = None
+    for w in paredes:
+        ax, ay = w["inicio"]["x"], w["inicio"]["y"]
+        bx, by = w["fim"]["x"], w["fim"]["y"]
+        L = math.hypot(bx - ax, by - ay)
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        nx, ny = -uy, ux
+        t = w["espessura_mm"]
+        off_in = t / 2 if w["eixo"] == "centro" else (0.0 if w["eixo"] == "face_interna" else t)
+
+        alinhado = True
+        for i in range(4):
+            ex, ey = pts[(i + 1) % 4][0] - pts[i][0], pts[(i + 1) % 4][1] - pts[i][1]
+            el = math.hypot(ex, ey)
+            if el < 1e-6:
+                alinhado = False
+                break
+            if min(abs(ex * uy - ey * ux) / el, abs(ex * ux + ey * uy) / el) > math.sin(math.radians(PARALELO_GRAUS)):
+                alinhado = False
+                break
+        if not alinhado:
+            continue
+
+        ss = [(x - ax) * ux + (y - ay) * uy for x, y in pts]
+        oo = [(x - ax) * nx + (y - ay) * ny - off_in for x, y in pts]
+        omin, omax, smin, smax = min(oo), max(oo), min(ss), max(ss)
+        if abs(omin) > ANCORA_MAX_MM or smin < -ANCORA_MAX_MM or smax > L + ANCORA_MAX_MM:
+            continue
+        if melhor is None or abs(omin) < melhor[0]:
+            melhor = (abs(omin), w, max(smin, 0.0), min(smax, L), omin, omax)
+    return melhor
+
+
+def ler_moveis(msp, fator, paredes, avisos):
+    moveis = []
+    contagem = {}
+    for e in msp:
+        camada = e.dxf.layer.upper()
+        if not camada.startswith("MOVEIS_"):
+            continue
+        bloco = camada[len("MOVEIS_"):].lower()
+        if bloco not in BLOCOS_PADRAO:
+            avisos.append(f"camada {camada}: bloco '{bloco}' não existe na biblioteca ({sorted(BLOCOS_PADRAO)}); ignorada")
+            continue
+        pts = retangulo_da_entidade(e, fator)
+        if pts is None:
+            avisos.append(f"camada {camada}: entidade {e.dxftype()} não é um retângulo fechado de 4 pontos; ignorada")
+            continue
+        ancora = ancorar_movel(pts, paredes)
+        if ancora is None:
+            avisos.append(
+                f"camada {camada}: retângulo em ({pts[0][0]:.0f},{pts[0][1]:.0f}) não está encostado (até {ANCORA_MAX_MM:g} mm) "
+                f"nem alinhado a nenhuma parede; ignorado"
+            )
+            continue
+        _, w, smin, smax, omin, omax = ancora
+        afast = max(omin, 0.0)
+        padrao = dict(BLOCOS_PADRAO[bloco])
+        elevacao = padrao.pop("elevacao_mm")
+        padrao["largura_mm"] = round(smax - smin, 1)
+        padrao["profundidade_mm"] = round(omax - afast, 1)
+        contagem[bloco] = contagem.get(bloco, 0) + 1
+        moveis.append({
+            "id": f"{bloco}_{contagem[bloco]}",
+            "bloco": {"catalogo": "demo", "id": bloco, "versao": 1},
+            "ambiente_id": "ambiente_1",
+            "apoio": {"parede_id": w["id"], "distancia_do_inicio_mm": round(smin, 1),
+                      "afastamento_mm": round(afast, 1), "elevacao_mm": elevacao},
+            "parametros": padrao,
+        })
+    if moveis:
+        avisos.append("Altura, espessura de chapa, zócalo e elevação dos móveis são padrões do bloco (não vêm do desenho).")
+    return moveis
+
+
 def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=2700.0, calibracao=None):
     """Retorna (projeto_dict, avisos)."""
     avisos = []
@@ -259,6 +363,9 @@ def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=2700.0, cal
         pavimento["ambientes"].append(
             {"id": "ambiente_1", "nome": "Ambiente 1", "paredes_ids": [p["id"] for p in paredes]}
         )
+        pavimento["mobiliario"] = ler_moveis(msp, fator, paredes, avisos)
+    elif any(e.dxf.layer.upper().startswith("MOVEIS_") for e in msp):
+        avisos.append("Há móveis no DXF, mas sem um contorno fechado de paredes eles não são lidos.")
 
     projeto = {
         "schema_version": "0.1.0",
