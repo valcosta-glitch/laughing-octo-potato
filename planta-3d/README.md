@@ -261,6 +261,8 @@ Móveis se apoiam **numa parede e num lado dela** (`apoio.parede_id` + `apoio.la
 
 As medidas que a frase não traz usam o **padrão do bloco** (`tools/blocos.py`, lido das pranchas de detalhe **a olho**, sem conferir cota): roupeiro profundidade 55 cm e zócalo 10 cm; gabinete 85 cm de altura, 48 cm de profundidade, 20 cm do piso; rack 36 × 40 cm, 24 cm do piso; painel 1,20 m; espelho 1,00 m a 1,05 m do piso; chapa 15 mm; portas ≈ 60 cm cada. Cada uso de padrão vira **AVISO** para você conferir. Frentes: branco, marula, titânio, freijó, nogueira, verde, espelho (**cores aproximadas**; texturas reais virão do catálogo de acabamentos). Caixaria sempre branca. O SketchUp recebe cada chapa como grupo nomeado e a **lista de corte** sai no resultado.
 
+**Prova com a planta real (Guarajuba, superior).** Com duas frases (`adicionar roupeiro de 4,18 m na parede p20 lado oeste a 5,9 m do início, frente freijó` e `adicionar roupeiro de 1,58 m na parede p5 lado norte encostado no início, frente marula`) o modelo saiu no SketchUp com 77 peças fechadas e **0 problemas** (27 chapas na lista de corte). As caixas conferem com o previsto em planta: roupeiro da suíte máster de x 5400–5950 mm e y 5900–10080 mm (4,18 m, encostado na face da parede p20); roupeiro da suíte 02 de x 240–1820 mm e y 6830–7380 mm (1,58 m, do canto até o fim da parede p5, que mede 1,59 m).
+
 ## Converter um DXF (só até o JSON)
 
 ```bash
