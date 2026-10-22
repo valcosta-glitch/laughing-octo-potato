@@ -33,7 +33,8 @@ for g in model.get_entities().get_groups():
         projeto_grp = g
 
 # piso: laje sob o contorno externo das paredes (as paredes assentam sobre ela, em z = 0)
-leaf_group(projeto_grp, "Piso", prism_faces([(p[0], p[1]) for p in cantos_out], -PISO_ESP, 0.0), mat_piso)
+piso_poly = ctx.get("piso_poly") or [(p[0], p[1]) for p in cantos_out]
+leaf_group(projeto_grp, "Piso", prism_faces(piso_poly, -PISO_ESP, 0.0), mat_piso)
 
 for w in paredes:
     o0 = w["off_out"]

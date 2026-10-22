@@ -54,7 +54,43 @@ def area_interna_aprox(paredes_do_ambiente):
     return (area - perimetro * t / 2 + n * t * t / 4) / 1e6
 
 
+def checar_livre(pav, erros, avisos):
+    """Topologia livre: sem contorno fechado; confere vãos e sobreposição de caixas."""
+    ctx = f"pavimento '{pav['id']}'"
+    checar_ids_unicos(pav["paredes"], f"{ctx} paredes", erros)
+    checar_ids_unicos(pav.get("vaos", []), f"{ctx} vãos", erros)
+    if pav.get("aberturas") or pav.get("ambientes") or pav.get("mobiliario"):
+        erros.append(f"{ctx}: topologia 'livre' usa 'vaos'; 'aberturas', 'ambientes' e 'mobiliario' ainda não são suportados")
+    caixas = []
+    for p in pav["paredes"]:
+        if comprimento(p) == 0:
+            erros.append(f"parede '{p['id']}': comprimento zero")
+        a, b, t = p["inicio"], p["fim"], p["espessura_mm"]
+        if abs(a["x"] - b["x"]) > 1e-6 and abs(a["y"] - b["y"]) > 1e-6:
+            erros.append(f"parede '{p['id']}': não ortogonal (topologia livre só aceita paredes horizontais/verticais)")
+            continue
+        caixas.append((p["id"], min(a["x"], b["x"]) - (t / 2 if a["x"] == b["x"] else 0),
+                       max(a["x"], b["x"]) + (t / 2 if a["x"] == b["x"] else 0),
+                       min(a["y"], b["y"]) - (t / 2 if a["y"] == b["y"] else 0),
+                       max(a["y"], b["y"]) + (t / 2 if a["y"] == b["y"] else 0)))
+    for i in range(len(caixas)):
+        for j in range(i + 1, len(caixas)):
+            _, ax0, ax1, ay0, ay1 = caixas[i]
+            _, bx0, bx1, by0, by1 = caixas[j]
+            dx, dy = min(ax1, bx1) - max(ax0, bx0), min(ay1, by1) - max(ay0, by0)
+            if dx > 20 and dy > 20:
+                avisos.append(f"paredes '{caixas[i][0]}' e '{caixas[j][0]}' se sobrepõem em {dx:.0f} x {dy:.0f} mm (faces coplanares no topo)")
+    for v in pav.get("vaos", []):
+        if v.get("peitoril_mm", 0) + v["altura_mm"] > pav["pe_direito_mm"]:
+            erros.append(f"vão '{v['id']}': ultrapassa o pé-direito")
+        if v["tipo"] == "porta" and v.get("peitoril_mm", 0) != 0:
+            avisos.append(f"vão '{v['id']}': porta com peitoril diferente de zero")
+
+
 def checar_pavimento(pav, vistas, erros, avisos):
+    if pav.get("topologia") == "livre":
+        checar_livre(pav, erros, avisos)
+        return
     ctx = f"pavimento '{pav['id']}'"
     paredes = {p["id"]: p for p in pav["paredes"]}
     checar_ids_unicos(pav["paredes"], f"{ctx} paredes", erros)

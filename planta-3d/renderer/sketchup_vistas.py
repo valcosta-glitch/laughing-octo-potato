@@ -117,7 +117,10 @@ for s, (nome, cam) in zip(cenas, vistas):
 # normal externa da parede e a direção horizontal do olho). Some com as esquadrias dela, só na cena interna.
 ctx_vistas = session_state.get("ctx")
 oculta = None
-if ctx_vistas is not None:
+nomes_ocultos = []
+if ctx_vistas is not None and ctx_vistas.get("ocultar_nomes") is not None:
+    nomes_ocultos = list(ctx_vistas["ocultar_nomes"])      # modo livre: o próprio renderer já decidiu
+elif ctx_vistas is not None:
     olho_x, olho_y = math.sin(math.radians(AZ_INTERNA)), -math.cos(math.radians(AZ_INTERNA))
     frente = None
     melhor = -2.0
@@ -129,6 +132,7 @@ if ctx_vistas is not None:
     nomes_ocultos = ["Parede_" + frente["id"]]
     for ab in ctx_vistas["abs"].get(frente["id"], []):
         nomes_ocultos.append(("Porta_" if ab["tipo"] == "porta" else "Janela_") + ab["id"])
+if nomes_ocultos:
     oculta = Layer()
     oculta.set_name("Parede_da_frente")
     model.add_layers([oculta])
