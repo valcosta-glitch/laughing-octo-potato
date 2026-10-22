@@ -5,20 +5,14 @@ renderer/sketchup_moveis.py (roda dentro do SketchUp e não pode importar este m
 
 PADRÕES: as medidas padrão vieram das pranchas de detalhe da casa de praia (lidas a olho, NÃO conferidas
 por cota) e valem só quando a frase/JSON não informa a medida. Tudo o que for informado vence o padrão.
-Cores das frentes são aproximadas (as texturas reais virão do catálogo de acabamentos).
+As frentes são acabamentos do catálogo (tools/acabamentos.py): textura procedural, não a foto do fabricante.
 """
 import math
 
-# nome -> RGB (frentes e painéis); a caixaria (corpo) é sempre branca
-FRENTES = {
-    "branco": (240, 240, 235),
-    "marula": (205, 170, 125),
-    "titanio": (125, 128, 132),
-    "freijo": (186, 148, 98),
-    "nogueira": (92, 64, 48),
-    "verde": (96, 140, 120),
-    "espelho": (176, 200, 210),
-}
+from acabamentos import ACABAMENTOS
+
+# frentes e painéis: qualquer acabamento do catálogo marcado para móvel (id -> RGB médio); a caixaria é sempre branca
+FRENTES = {aid: tuple(a["rgb"]) for aid, a in ACABAMENTOS.items() if "movel" in a["uso"]}
 
 # o que cada bloco exige e os padrões; "elevacao_mm" e "afastamento_mm" ficam em apoio, não em parametros
 BLOCOS = {

@@ -24,6 +24,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from acabamentos import ACABAMENTOS, para_renderer
 from blocos import BLOCOS, FRENTES, altura_do_movel, completar
 from validar import SCHEMA_PADRAO, checar_projeto
 
@@ -135,24 +136,60 @@ def montar_moveis(dados):
     return saida
 
 
+_NORMAL_LADO = {"norte": [0, 1, 0], "sul": [0, -1, 0], "leste": [1, 0, 0], "oeste": [-1, 0, 0]}
+
+
+def montar_acabamentos(dados, moveis):
+    """(catálogo compacto dos itens usados, aplicações em paredes/piso resolvidas para grupos e normais)."""
+    pav = dados["pavimentos"][0]
+    usados = {m["parametros"]["frente"] for m in moveis if m["parametros"].get("frente") in ACABAMENTOS}
+    aplicacoes = []
+    if pav.get("topologia") == "livre":
+        for ac in pav.get("acabamentos", []):
+            alvo, aid = ac["alvo"], ac["textura"]["id"]
+            if alvo["tipo"] == "parede":
+                aplicacoes.append({"grupo": "Parede_" + alvo["id"], "acab": aid,
+                                   "normal": _NORMAL_LADO[alvo["lado"]] if alvo.get("lado") else None})
+            elif alvo["tipo"] == "piso":
+                aplicacoes.append({"grupo": "Piso", "acab": aid, "normal": [0, 0, 1]})
+            usados.add(aid)
+    return para_renderer(usados), aplicacoes
+
+
+def _bloco_texto(nome, valor):
+    """`nome = [...]` com um item por linha (o script vai colado no conector)."""
+    if isinstance(valor, dict):
+        itens = [f"  {json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}" for k, v in valor.items()]
+        return nome + " = {\n" + ",\n".join(itens) + "\n}\n"
+    return nome + " = [\n" + ",\n".join("  " + json.dumps(i, ensure_ascii=False) for i in valor) + "\n]\n"
+
+
 def gerar_script(dados):
     """Script único para o build_model do conector a partir do JSON intermediário já validado."""
     pav = dados["pavimentos"][0]
-    if pav.get("topologia") == "livre":
-        moveis = montar_moveis(dados)
+    moveis = montar_moveis(dados)
+    cat, aplicacoes = montar_acabamentos(dados, moveis)
+    livre = pav.get("topologia") == "livre"
+    if livre:
         partes = ["projeto = " + _dict_compacto(montar_dict_livre(dados)) + "\n"]
         modulos = list(MODULOS_LIVRE)
-        if moveis:
-            partes.append("moveis = [\n" + ",\n".join("  " + json.dumps(m, ensure_ascii=False) for m in moveis) + "\n]\n")
-            modulos.insert(modulos.index("sketchup_esquadrias.py") + 1, "sketchup_moveis.py")
-        for nome in modulos:
-            partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
-        return "\n".join(partes)
-    partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n",
-              "moveis = " + json.dumps(montar_moveis(dados), ensure_ascii=False, indent=4) + "\n"]
-    for nome in MODULOS:
+        depois_ctx, antes_vistas = "sketchup_livre_ctx.py", "sketchup_vistas.py"
+    else:
+        partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n"]
+        modulos = list(MODULOS)
+        depois_ctx, antes_vistas = "sketchup_paredes.py", "sketchup_vistas.py"
+    partes.append(_bloco_texto("moveis", moveis) if (moveis or not livre) else "")
+    if cat:                                                        # textura só quando algo do catálogo é usado
+        partes.append(_bloco_texto("acabamentos_cat", cat))
+        modulos.insert(modulos.index(depois_ctx) + 1, "sketchup_texturas.py")
+    if livre and moveis:
+        modulos.insert(modulos.index("sketchup_esquadrias.py") + 1, "sketchup_moveis.py")
+    if aplicacoes:
+        partes.append(_bloco_texto("acabamentos", aplicacoes))
+        modulos.insert(modulos.index(antes_vistas), "sketchup_acabamentos.py")
+    for nome in modulos:
         partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
-    return "\n".join(partes)
+    return "\n".join(p for p in partes if p)
 
 
 def main():

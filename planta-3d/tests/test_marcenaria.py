@@ -177,8 +177,9 @@ class TestScript(Base):
         self.assertIn("moveis = [", script)
         self.assertIn('"lado": "norte"', script)
         self.assertIn('"frente_rgb": [92, 64, 48]', script)
-        self.assertLess(script.index("sketchup_esquadrias.py"), script.index("sketchup_moveis.py"))
-        self.assertLess(script.index("sketchup_moveis.py"), script.index("sketchup_vistas.py"))
+        banner = lambda n: "= " + n + " ="            # o nome também aparece em comentários de outros módulos
+        self.assertLess(script.index(banner("sketchup_esquadrias.py")), script.index(banner("sketchup_moveis.py")))
+        self.assertLess(script.index(banner("sketchup_moveis.py")), script.index(banner("sketchup_vistas.py")))
 
     def test_sem_moveis_o_script_nao_inclui_o_modulo(self):
         script = gerar_script(self.base)

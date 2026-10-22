@@ -476,6 +476,7 @@
             "tipo": {
               "enum": [
                 "parede_face",
+                "parede",
                 "piso",
                 "movel_peca",
                 "ambiente"
@@ -488,6 +489,15 @@
               "enum": [
                 "interna",
                 "externa"
+              ]
+            },
+            "lado": {
+              "description": "Topologia 'livre' (alvo 'parede'): só as faces da parede voltadas para este lado. Sem 'lado', todas as faces.",
+              "enum": [
+                "norte",
+                "sul",
+                "leste",
+                "oeste"
               ]
             },
             "peca": {
@@ -621,7 +631,8 @@
                 "vao",
                 "parede",
                 "pavimento",
-                "movel"
+                "movel",
+                "acabamento"
               ]
             },
             "parametros": {

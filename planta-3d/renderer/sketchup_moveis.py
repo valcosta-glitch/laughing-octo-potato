@@ -5,6 +5,7 @@
 #   [{"id", "bloco": <ver BLOCOS abaixo>, "parede_id", "distancia_do_inicio_mm", "afastamento_mm", "elevacao_mm",
 #     "lado": "norte"|"sul"|"leste"|"oeste"   (SÓ no modo livre: face da parede onde encosta; distância da ponta de menor coordenada),
 #     "parametros": {...}}]   (tudo em mm)
+# Acabamentos: se existir ctx["material_acab"] (sketchup_texturas.py) a `frente` usa a textura do catálogo `acabamentos_cat`.
 # No modo contorno a parede vem do contexto (ctx["paredes"]); no livre o quadro da face é montado aqui a partir de `projeto`.
 #
 # Cada móvel é um grupo com uma peça (chapa) por subgrupo, nomeada para virar lista de corte.
@@ -137,13 +138,21 @@ def gaveteiro(asm, w, base, p):
         peca(asm, w, base, g + "Fundo", a0 + GAVETA_ESP, a1 - GAVETA_ESP, d0 + GAVETA_ESP, d1 - GAVETA_ESP, zc, zc + GAVETA_FUNDO, mat_corpo)
 
 
+def material_frente(p):
+    """Acabamento da frente: textura do catálogo (sketchup_texturas.py) ou, sem ela, a cor média `frente_rgb`."""
+    f = p.get("frente", "branco")
+    if "material_acab" in ctx and f in acabamentos_cat:
+        return ctx["material_acab"](f)
+    return get_or_create_material("Frente_" + f, p["frente_rgb"][0], p["frente_rgb"][1], p["frente_rgb"][2])
+
+
 def caixa_portas(asm, w, base, p):
     """Roupeiro piso-teto, gabinete e rack suspensos: caixa branca + frentes na cor `frente_rgb`. socalo 0 = suspenso."""
     W, H, D = p["largura_mm"], p["altura_mm"], p["profundidade_mm"]
     e = p["espessura_chapa_mm"]
     soc = p.get("socalo_mm", 0.0)
     Dc = D - e
-    mat_f = get_or_create_material("Frente_" + p.get("frente", "branco"), p["frente_rgb"][0], p["frente_rgb"][1], p["frente_rgb"][2])
+    mat_f = material_frente(p)
     peca(asm, w, base, "Lateral_Esq", 0, e, 0, Dc, 0, H, mat_corpo)
     peca(asm, w, base, "Lateral_Dir", W - e, W, 0, Dc, 0, H, mat_corpo)
     peca(asm, w, base, "Base", e, W - e, FUNDO_ESP, Dc, soc, soc + e, mat_corpo)
@@ -166,7 +175,7 @@ def caixa_portas(asm, w, base, p):
 
 def painel(asm, w, base, p):
     """Painel ou espelho: uma chapa na parede."""
-    mat_p = get_or_create_material("Frente_" + p.get("frente", "nogueira"), p["frente_rgb"][0], p["frente_rgb"][1], p["frente_rgb"][2])
+    mat_p = material_frente(p)
     peca(asm, w, base, "Painel", 0, p["largura_mm"], 0, p["espessura_mm"], 0, p["altura_mm"], mat_p)
 
 

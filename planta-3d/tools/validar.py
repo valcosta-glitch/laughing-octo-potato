@@ -13,6 +13,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from acabamentos import ACABAMENTOS, CATALOGO_ID
 from blocos import BLOCOS, FRENTES, LADOS, altura_do_movel, caixa_parede, extremos, completar, faltando, retangulo_movel
 
 SCHEMA_PADRAO = Path(__file__).resolve().parent.parent / "schema" / "projeto.schema.json"
@@ -96,6 +97,41 @@ def checar_livre(pav, erros, avisos):
         if v["tipo"] == "porta" and v.get("peitoril_mm", 0) != 0:
             avisos.append(f"vão '{v['id']}': porta com peitoril diferente de zero")
     checar_moveis_livre(pav, erros, avisos)
+    checar_acabamentos_livre(pav, erros)
+
+
+def checar_acabamentos_livre(pav, erros):
+    """Acabamentos na topologia livre: alvo 'parede' (com lado opcional) ou 'piso'; o item tem de existir no catálogo."""
+    paredes = {p["id"]: p for p in pav["paredes"]}
+    checar_ids_unicos(pav.get("acabamentos", []), f"pavimento '{pav['id']}' acabamentos", erros)
+    vistos = set()
+    for ac in pav.get("acabamentos", []):
+        alvo, tex = ac["alvo"], ac["textura"]
+        if tex["catalogo"] != CATALOGO_ID or tex["id"] not in ACABAMENTOS:
+            erros.append(f"acabamento '{ac['id']}': '{tex['catalogo']}/{tex['id']}' não existe no catálogo de acabamentos")
+        elif alvo["tipo"] == "parede" and "parede" not in ACABAMENTOS[tex["id"]]["uso"]:
+            erros.append(f"acabamento '{ac['id']}': '{tex['id']}' não é para parede")
+        elif alvo["tipo"] == "piso" and "piso" not in ACABAMENTOS[tex["id"]]["uso"]:
+            erros.append(f"acabamento '{ac['id']}': '{tex['id']}' não é para piso")
+        if alvo["tipo"] not in ("parede", "piso"):
+            erros.append(f"acabamento '{ac['id']}': alvo '{alvo['tipo']}' ainda não é suportado na topologia livre (use 'parede' ou 'piso'; a frente do móvel é o parâmetro 'frente')")
+            continue
+        if alvo["tipo"] == "parede":
+            p = paredes.get(alvo["id"])
+            if p is None:
+                erros.append(f"acabamento '{ac['id']}': parede '{alvo['id']}' não existe")
+            elif p.get("tipo") == "pilar":
+                erros.append(f"acabamento '{ac['id']}': '{alvo['id']}' é pilar")
+            elif alvo.get("lado") and alvo["lado"] not in LADOS[eixo_da(p)]:
+                erros.append(f"acabamento '{ac['id']}': a parede '{p['id']}' corre ao longo de {eixo_da(p).upper()}; o lado é {' ou '.join(LADOS[eixo_da(p)])}")
+        chave = (alvo["tipo"], alvo["id"], alvo.get("lado"))
+        if chave in vistos:
+            erros.append(f"acabamento '{ac['id']}': já existe outro acabamento para o mesmo alvo ({alvo['tipo']} {alvo['id']}{' ' + alvo['lado'] if alvo.get('lado') else ''})")
+        vistos.add(chave)
+
+
+def eixo_da(p):
+    return extremos(p)[0]
 
 
 def checar_moveis_livre(pav, erros, avisos):

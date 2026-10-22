@@ -29,6 +29,11 @@ Móveis (modo "livre"; blocos em blocos.py: armário/roupeiro piso-teto, gabinet
   adicionar roupeiro de 4,18 m na parede p12 lado sul encostado no fim, piso ao teto, portas 6
   remover móvel m2 | mover armário m2 20 cm para leste (só ao longo da parede) | móvel m2: largura 1,60 m, altura 2,40 m, frente freijó
   Medidas que a frase não traz usam o PADRÃO do bloco (lido das pranchas, a olho) e viram AVISO para você conferir.
+Acabamentos (modo "livre"; catálogo em acabamentos.py, `python3 tools/acabamentos.py` lista os itens):
+  pintar parede p5 de verde sálvia | pintar parede p5 lado norte de verde sálvia | revestir parede p5 lado sul com marula
+  piso porcelanato cinza | acabamento do piso: cimento queimado
+  remover acabamento a1 | remover acabamento da parede p5 | remover acabamento do piso      (volta ao padrão)
+  A frente de um móvel é o parâmetro `frente` (ver acima), com os mesmos nomes do catálogo.
 Unidades: mm, cm ou m. Sem unidade: menor que 10 = metros; 100 ou mais = milímetros; entre 10 e 99 pede a unidade.
 Direções: norte = +Y (cima na planta), sul = −Y, leste = +X, oeste = −X.
 """
@@ -43,6 +48,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from acabamentos import ACABAMENTOS, achar, normalizar_id, ref_catalogo
 from blocos import APELIDOS, BLOCOS, FRENTES, LADOS, completar, extremos, faltando
 from validar import SCHEMA_PADRAO, checar_projeto
 
@@ -101,7 +107,8 @@ def _extremos(p):
 
 def _proximo_id(projeto, prefixo, extras=()):
     usados = ([p["id"] for p in _pav(projeto)["paredes"]] + [v["id"] for v in _lista_vaos(projeto)] +
-              [m["id"] for m in _pav(projeto).get("mobiliario", [])] + list(extras))
+              [m["id"] for m in _pav(projeto).get("mobiliario", [])] +
+              [a["id"] for a in _pav(projeto).get("acabamentos", [])] + list(extras))
     n = max([int(re.sub(r"\D", "", i) or 0) for i in usados if i.startswith(prefixo) and not (prefixo == "p" and i.startswith("pil"))] + [0])
     return f"{prefixo}{n + 1}"
 
@@ -208,6 +215,12 @@ def interpretar(texto, projeto):
         if not m:
             raise ErroAjuste("pé-direito: faltou o valor (ex.: 'pé-direito 2,60 m')")
         return [_cmd("alterar_parametro", "pavimento", pav["id"], {"pe_direito_mm": _para_mm(m.group(1), m.group(2), "pé-direito")})]
+
+    # acabamentos (antes de parede: a frase também cita "parede p5")
+    if re.match(r"^(pint\w*|revest\w*|acabament\w*|aplic\w*|troc\w*|mud\w*|piso|remov\w*|tir\w*|apag\w*)\b", t) and \
+            (re.search(r"\bacabamento\b", t) or re.match(r"^(pint\w*|revest\w*|piso)\b", t) or
+             (re.match(r"^(acabament\w*|aplic\w*|troc\w*|mud\w*)\b", t) and re.search(r"\b(piso|parede)\b", t))):
+        return _acabamento(projeto, t)
 
     # móveis (antes de parede e vão: a frase também cita "parede p5")
     if re.match(r"^adicion\w*\s+(?:um |uma )?" + _PALAVRA_BLOCO + r"\b", t):
@@ -362,14 +375,13 @@ _PALAVRA_BLOCO = r"(roupeiro|guarda-roupa|armario|gabinete|rack|painel|espelho|b
 _REF_MOVEL = re.compile(r"\b(?:movel|" + _PALAVRA_BLOCO[1:-1] + r")\s*(?:n[o°º]?\s*)?m(\d+)\b")
 _FILLER = {"a", "o", "e", "na", "no", "ao", "de", "do", "da", "em", "com", "um", "uma", "lado", "face", "pelo", "pela", "m", "cm", "mm",
            "parede", "para", "movel", "ate", "teto", "piso", "cor", "inicio", "fim", "ponta", "dele", "dela", "vao",
-           "alterar", "mudar", "trocar", "ajustar", "definir", "veneto", "trama", "que", "tenha", "seja"}
+           "alterar", "mudar", "trocar", "ajustar", "definir", "que", "tenha", "seja"}
 
 
 def _frente(txt):
-    nome = _norm(txt)
-    nome = {"freijo": "freijo", "titanio": "titanio"}.get(nome, nome)
-    if nome not in FRENTES:
-        raise ErroAjuste(f"frente '{txt}' desconhecida (conhecidas: {', '.join(sorted(FRENTES))})")
+    nome = normalizar_id(txt)
+    if nome is None or nome not in FRENTES:
+        raise ErroAjuste(f"frente '{txt.strip()}' desconhecida (conhecidas: {', '.join(sorted(FRENTES))})")
     return nome
 
 
@@ -393,7 +405,8 @@ def _atributos_movel(t):
     tira(r"\blargura\b[^0-9]{0,12}?" + _NUM, "largura_mm", lambda m: _para_mm(m.group(1), m.group(2), "largura"))
     tira(r"\bportas?\s+(\d+)\b", "portas", lambda m: int(m.group(1)))
     tira(r"\b(\d+)\s+portas?\b", "portas", lambda m: int(m.group(1)))
-    tira(r"\b(?:frente|cor)\s+(?:em |na cor |de )?([a-z]+)", "frente", lambda m: _frente(m.group(1)))
+    tira(r"\b(?:frente|cor)\s+(?:em |na cor |de |da cor )?([a-z][a-z \-]*?)(?=\s*,|\s*$|\s+(?:profundidade|altura|largura|portas?|elevacao|elevado|espessura|afastamento|piso)\b|\s+\d)",
+         "frente", lambda m: _frente(m.group(1)))
     tira(r"\b(?:piso[- ]?(?:ao |a )?teto|ate o teto)\b", "piso_teto", lambda m: True)
     return achados, t
 
@@ -565,6 +578,69 @@ def _ajustar_movel(projeto, t):
     return [_cmd("alterar_parametro", "movel", mid, par)]
 
 
+_FILLER_AC = {"pintar", "pinte", "pinta", "revestir", "reveste", "revestimento", "acabamento", "aplicar", "aplique", "trocar", "troque",
+              "mudar", "mude", "remover", "remova", "tirar", "tire", "apagar", "apague", "de", "da", "do", "com", "em", "para", "na", "no",
+              "a", "o", "cor", "e", "piso", "parede", "lado", "face", "padrao", "o", "os", "as"}
+
+
+def _acabamento(projeto, t):
+    if not _livre(projeto):
+        raise ErroAjuste("acabamento por frase só existe no modo 'livre'")
+    pav = _pav(projeto)
+    atuais = pav.get("acabamentos", [])
+    remover = bool(re.match(r"^(remov\w*|tir\w*|apag\w*)\b", t))
+    mp = _REF_PAREDE.search(t)
+    resto = _REF_PAREDE.sub(" ", t)
+    lado = None
+    ml = re.search(r"\b(?:lado|face)\s+(norte|sul|leste|oeste)\b", resto)
+    if ml:
+        lado = ml.group(1)
+        resto = resto.replace(ml.group(0), " ", 1)
+    ma = re.search(r"\bacabamento\s+(a\d+)\b", resto)
+    if remover and ma:
+        ac = next((a for a in atuais if a["id"] == ma.group(1)), None)
+        if ac is None:
+            raise ErroAjuste(f"acabamento '{ma.group(1)}' não existe (existentes: {', '.join(a['id'] for a in atuais) or 'nenhum'})")
+        return [_cmd("remover", "acabamento", ac["id"])]
+    if mp:
+        pid = mp.group(1) if not mp.group(1).isdigit() else f"p{mp.group(1)}"
+        p = _parede(projeto, pid)
+        if p.get("tipo") == "pilar":
+            raise ErroAjuste("pilar não recebe acabamento por frase")
+        eixo = extremos(p)[0]
+        if lado and lado not in LADOS[eixo]:
+            raise ErroAjuste(f"a parede {pid} corre ao longo de {eixo.upper()}: o lado é {' ou '.join(LADOS[eixo])}, não {lado}")
+        alvo = {"tipo": "parede", "id": pid, **({"lado": lado} if lado else {})}
+    elif re.search(r"\bpiso\b", resto):
+        if lado:
+            raise ErroAjuste("piso não tem lado")
+        alvo = {"tipo": "piso", "id": pav["id"]}
+    else:
+        raise ErroAjuste("diga o alvo: 'parede p5' ou 'piso'")
+    existente = next((a for a in atuais if a["alvo"] == alvo), None)
+    if remover:
+        if existente is None:
+            raise SemEfeito("esse alvo já está no padrão (sem acabamento)")
+        return [_cmd("remover", "acabamento", existente["id"])]
+    aid = achar(resto)
+    if aid is None:
+        raise ErroAjuste("acabamento não reconhecido; use um nome do catálogo (python3 tools/acabamentos.py): " + ", ".join(ACABAMENTOS))
+    nomes = {w for n in [aid, ACABAMENTOS[aid]["nome"]] + ACABAMENTOS[aid].get("apelidos", []) for w in _norm(n.replace("-", " ")).split()}
+    sobra = [w for w in re.findall(r"[a-z0-9]+", resto) if w not in nomes and w not in _FILLER_AC]
+    if sobra:
+        raise ErroAjuste("não entendi: " + ", ".join(f"'{w}'" for w in sobra))
+    if alvo["tipo"] == "parede" and "parede" not in ACABAMENTOS[aid]["uso"]:
+        raise ErroAjuste(f"'{ACABAMENTOS[aid]['nome']}' não é acabamento de parede")
+    if alvo["tipo"] == "piso" and "piso" not in ACABAMENTOS[aid]["uso"]:
+        raise ErroAjuste(f"'{ACABAMENTOS[aid]['nome']}' não é acabamento de piso")
+    if existente is not None and existente["textura"]["id"] == aid:
+        raise SemEfeito(f"o alvo já tem {ACABAMENTOS[aid]['nome']}")
+    cmds = [_cmd("remover", "acabamento", existente["id"])] if existente is not None else []
+    novo_id = existente["id"] if existente is not None else _proximo_id(projeto, "a")
+    cmds.append(_cmd("adicionar", "acabamento", novo_id, {"alvo": alvo, "textura": ref_catalogo(aid)}))
+    return cmds
+
+
 def _parede_do_vao(v):
     c, w, e = v["centro"], v["largura_mm"], v["espessura_mm"]
     if v["eixo"] == "x":
@@ -718,6 +794,21 @@ def _executar(projeto, c):
             else:
                 _marcar_usuario(v, "ajuste digitado")
             return _cmd(acao, "vao", aid, antigo)
+    if alvo == "acabamento":
+        lista = pav.setdefault("acabamentos", [])
+        if acao == "remover":
+            a = next((x for x in lista if x["id"] == aid), None)
+            if a is None:
+                raise ErroAjuste(f"acabamento '{aid}' não existe")
+            lista.remove(a)
+            if not lista:
+                pav.pop("acabamentos")
+            return _cmd("adicionar", "acabamento", aid, {k: v for k, v in a.items() if k != "id"})
+        if acao == "adicionar":
+            if any(x["id"] == aid for x in lista):
+                raise ErroAjuste(f"já existe o acabamento '{aid}'")
+            lista.append({"id": aid, **copy.deepcopy(par)})
+            return _cmd("remover", "acabamento", aid)
     if alvo == "movel":
         lista = pav.setdefault("mobiliario", [])
         if acao == "remover":
@@ -763,7 +854,7 @@ def _validar(projeto):
 
 
 _OCULTOS = ("inicio", "fim", "centro", "origem", "confianca", "evidencia", "eixo", "_meta", "perpendicular", "tipo_alvo",
-            "apoio", "parametros", "padroes_usados")
+            "apoio", "parametros", "padroes_usados", "alvo", "textura")
 
 
 def descrever(c):
@@ -776,6 +867,11 @@ def descrever(c):
             extra = f" ({q['inicio']['x']:g},{q['inicio']['y']:g})→({q['fim']['x']:g},{q['fim']['y']:g})"
         elif "centro" in q:
             extra = f" {q.get('tipo', '')} em ({q['centro']['x']:g},{q['centro']['y']:g})"
+    if c["alvo"] == "acabamento" and c["acao"] == "adicionar" and c.get("parametros"):
+        q = c["parametros"]
+        a = q["alvo"]
+        extra = f" {q['textura']['id']} em {a['tipo']} {a['id'] if a['tipo'] == 'parede' else ''}{' lado ' + a['lado'] if a.get('lado') else ''}".rstrip()
+        p = {}
     if c["alvo"] == "movel" and c["acao"] == "adicionar" and c.get("parametros"):
         q = c["parametros"]
         a = q["apoio"]

@@ -263,6 +263,22 @@ As medidas que a frase não traz usam o **padrão do bloco** (`tools/blocos.py`,
 
 **Prova com a planta real (Guarajuba, superior).** Com duas frases (`adicionar roupeiro de 4,18 m na parede p20 lado oeste a 5,9 m do início, frente freijó` e `adicionar roupeiro de 1,58 m na parede p5 lado norte encostado no início, frente marula`) o modelo saiu no SketchUp com 77 peças fechadas e **0 problemas** (27 chapas na lista de corte). As caixas conferem com o previsto em planta: roupeiro da suíte máster de x 5400–5950 mm e y 5900–10080 mm (4,18 m, encostado na face da parede p20); roupeiro da suíte 02 de x 240–1820 mm e y 6830–7380 mm (1,58 m, do canto até o fim da parede p5, que mede 1,59 m).
 
+### Acabamentos e texturas (`tools/acabamentos.py`)
+
+Catálogo versionado (`acabamentos`, versão 1) com pinturas lisas (branco, areia, cinza claro/grafite, verde, verde sálvia, azul petróleo, terracota, espelho), madeiras (marula, freijó, nogueira véneto, carvalho), titânio trama, granito branco itaúnas, porcelanato cinza/areia 60×60 e cimento queimado. `python3 tools/acabamentos.py` lista os itens, com o tipo e onde servem (parede, piso, móvel).
+
+| Frase (exemplos) | O que faz |
+|---|---|
+| `pintar parede p5 de verde sálvia` · `revestir parede p5 com marula` · `acabamento da parede p5: nogueira véneto` | acabamento na parede inteira |
+| `pintar parede p5 lado norte de terracota` | só as faces voltadas para o norte (o lado tem de existir na parede) |
+| `piso porcelanato cinza` · `acabamento do piso: cimento queimado` | piso (troca o anterior, não acumula) |
+| `remover acabamento a1` · `remover acabamento da parede p5` · `remover acabamento do piso` | volta ao padrão |
+| `adicionar armário de 1,58 m ..., frente titânio trama` · `móvel m1: frente granito branco itaúnas` | a frente do móvel usa os mesmos nomes do catálogo |
+
+No JSON cada acabamento é `{"id": "a1", "alvo": {"tipo": "parede" | "piso", "id": ..., "lado": ...}, "textura": {"catalogo": "acabamentos", "id": "marula", "versao": 1}}`. O validador recusa item fora do catálogo, uso errado (porcelanato em parede), parede/lado inexistente, pilar e dois acabamentos no mesmo alvo. Tudo tem desfazer exato, como as outras frases.
+
+**Como a textura aparece no SketchUp.** O conector não lê arquivos de imagem, então as texturas são **procedurais**: uma amostra de 64×64 pixels (veio de madeira, pontilhado de granito, trama, juntas de porcelanato) que se repete no tamanho real do material (`escala_mm`). Elas lembram o material, **não são a foto do fabricante**; os tons vieram das pranchas a olho. Medi no conector que `set_dimensions` espera **pixels por polegada** (o inverso deixa a textura gigante e lisa). Se a textura falhar, cai na cor média sólida. Só os itens usados entram no script. Limites: a verga e o peitoril dos vãos junto da parede pintada não mudam de cor; no modo contorno (DXF) só vale a `frente` do móvel; não há ainda orientação do veio por peça nem acabamento por face interna/externa (só por lado geográfico).
+
 ## Converter um DXF (só até o JSON)
 
 ```bash
