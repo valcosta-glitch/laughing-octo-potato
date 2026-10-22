@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/planta-3d/projeto.schema.json",
+  "title": "Projeto intermediário (planta -> 3D)",
+  "description": "Representação intermediária entre a leitura da planta/corte (IA ou DXF) e o renderizador (SketchUp). Unidade sempre em milímetros. Eixos: X para a direita, Y para cima na planta, Z para cima no 3D. Ângulos em graus, sentido anti-horário. Fase 1 preenche só arquitetura; mobiliário e acabamentos já têm lugar no esquema, mas podem ficar vazios.",
+  "type": "object",
+  "required": ["schema_version", "projeto", "fonte", "pavimentos"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "projeto": { "$ref": "#/$defs/projeto" },
+    "fonte": { "$ref": "#/$defs/fonte" },
+    "pavimentos": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pavimento" }
+    },
+    "vistas": {
+      "description": "Vistas a exportar. Independe da IA: vira cena em projeção paralela no SketchUp.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/vista" }
+    },
+    "historico_ajustes": {
+      "description": "Ajustes digitados pelo usuário e o comando estruturado em que cada um foi traduzido. Permite auditar e desfazer.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/ajuste" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "mm": { "type": "number" },
+    "mm_positivo": { "type": "number", "exclusiveMinimum": 0 },
+    "ponto": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "$ref": "#/$defs/mm" },
+        "y": { "$ref": "#/$defs/mm" }
+      }
+    },
+    "origem_dado": {
+      "description": "De onde veio o valor. Só 'medida' e 'usuario' devem ser tratados como confiáveis sem conferência.",
+      "enum": ["medida", "usuario", "inferida"]
+    },
+    "confianca": { "type": "number", "minimum": 0, "maximum": 1 },
+    "ref_catalogo": {
+      "description": "Referência a um item da biblioteca (bloco ou textura), versionada.",
+      "type": "object",
+      "required": ["catalogo", "id", "versao"],
+      "additionalProperties": false,
+      "properties": {
+        "catalogo": { "$ref": "#/$defs/id" },
+        "id": { "$ref": "#/$defs/id" },
+        "versao": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "projeto": {
+      "type": "object",
+      "required": ["nome", "unidade", "calibracao"],
+      "additionalProperties": false,
+      "properties": {
+        "nome": { "type": "string", "minLength": 1 },
+        "unidade": { "const": "mm" },
+        "calibracao": {
+          "description": "Referência de escala confirmada pelo usuário. Todo o resto é derivado dela.",
+          "type": "object",
+          "required": ["ponto_a", "ponto_b", "medida_mm", "origem"],
+          "additionalProperties": false,
+          "properties": {
+            "ponto_a": { "$ref": "#/$defs/ponto" },
+            "ponto_b": { "$ref": "#/$defs/ponto" },
+            "medida_mm": { "$ref": "#/$defs/mm_positivo" },
+            "origem": { "$ref": "#/$defs/origem_dado" }
+          }
+        },
+        "tolerancia_mm": {
+          "description": "Divergência máxima aceita entre medida lida (cota) e medida da geometria antes de alertar.",
+          "type": "number",
+          "minimum": 0,
+          "default": 10
+        }
+      }
+    },
+    "fonte": {
+      "type": "object",
+      "required": ["tipo", "arquivo"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "enum": ["dxf", "dwg", "pdf_vetorial", "imagem"] },
+        "arquivo": { "type": "string" },
+        "arquivo_corte": {
+          "description": "Arquivo do corte, usado para alturas (eixo Z).",
+          "type": "string"
+        },
+        "confianca_global": { "$ref": "#/$defs/confianca" }
+      }
+    },
+    "pavimento": {
+      "type": "object",
+      "required": ["id", "nome", "cota_piso_mm", "pe_direito_mm", "paredes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "nome": { "type": "string" },
+        "cota_piso_mm": { "$ref": "#/$defs/mm" },
+        "pe_direito_mm": { "$ref": "#/$defs/mm_positivo" },
+        "paredes": { "type": "array", "items": { "$ref": "#/$defs/parede" } },
+        "aberturas": { "type": "array", "items": { "$ref": "#/$defs/abertura" } },
+        "ambientes": { "type": "array", "items": { "$ref": "#/$defs/ambiente" } },
+        "mobiliario": {
+          "description": "PREVISTO (fase 4). Pode ficar vazio na fase 1.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/movel" }
+        },
+        "acabamentos": {
+          "description": "PREVISTO (fase 5). Pode ficar vazio na fase 1.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/acabamento" }
+        }
+      }
+    },
+    "parede": {
+      "description": "Segmento reto. O lado interno é sempre a esquerda de inicio -> fim (contorno anti-horário).",
+      "type": "object",
+      "required": ["id", "inicio", "fim", "espessura_mm", "eixo"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "inicio": { "$ref": "#/$defs/ponto" },
+        "fim": { "$ref": "#/$defs/ponto" },
+        "espessura_mm": { "$ref": "#/$defs/mm_positivo" },
+        "altura_mm": {
+          "description": "Se ausente, usa o pé-direito do pavimento.",
+          "$ref": "#/$defs/mm_positivo"
+        },
+        "eixo": {
+          "description": "A que a linha inicio-fim corresponde: centro da parede, face interna ou face externa.",
+          "enum": ["centro", "face_interna", "face_externa"]
+        },
+        "origem": { "$ref": "#/$defs/origem_dado" },
+        "confianca": { "$ref": "#/$defs/confianca" }
+      }
+    },
+    "abertura": {
+      "type": "object",
+      "required": ["id", "tipo", "parede_id", "posicao_mm", "largura_mm", "altura_mm"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "tipo": { "enum": ["porta", "janela", "vao"] },
+        "parede_id": { "$ref": "#/$defs/id" },
+        "posicao_mm": {
+          "description": "Distância, medida ao longo da parede a partir de 'inicio', até a borda mais próxima do início.",
+          "type": "number",
+          "minimum": 0
+        },
+        "largura_mm": { "$ref": "#/$defs/mm_positivo" },
+        "altura_mm": { "$ref": "#/$defs/mm_positivo" },
+        "peitoril_mm": {
+          "description": "Altura do piso até a base da abertura. 0 para portas.",
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
+        "sentido_abertura": { "enum": ["interno", "externo", "correr", "nenhum"] },
+        "origem": { "$ref": "#/$defs/origem_dado" },
+        "confianca": { "$ref": "#/$defs/confianca" }
+      }
+    },
+    "ambiente": {
+      "type": "object",
+      "required": ["id", "nome", "paredes_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "nome": { "type": "string" },
+        "paredes_ids": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "area_declarada_m2": {
+          "description": "Área escrita na planta, quando houver. Usada para conferência.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "movel": {
+      "type": "object",
+      "required": ["id", "bloco", "ambiente_id", "apoio", "parametros"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "bloco": { "$ref": "#/$defs/ref_catalogo" },
+        "ambiente_id": { "$ref": "#/$defs/id" },
+        "apoio": {
+          "description": "Posição relativa à arquitetura, e não em coordenadas soltas. Se a parede mudar, o móvel acompanha.",
+          "type": "object",
+          "required": ["parede_id", "distancia_do_inicio_mm", "afastamento_mm"],
+          "additionalProperties": false,
+          "properties": {
+            "parede_id": { "$ref": "#/$defs/id" },
+            "distancia_do_inicio_mm": { "type": "number", "minimum": 0 },
+            "afastamento_mm": { "type": "number", "minimum": 0, "default": 0 },
+            "elevacao_mm": {
+              "description": "Altura da base do móvel em relação ao piso (aéreos).",
+              "type": "number",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        },
+        "parametros": {
+          "description": "Valores dos parâmetros definidos pelo bloco no catálogo. A lista de corte sai daqui.",
+          "type": "object"
+        }
+      }
+    },
+    "acabamento": {
+      "type": "object",
+      "required": ["id", "alvo", "textura"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "alvo": {
+          "type": "object",
+          "required": ["tipo", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "tipo": { "enum": ["parede_face", "piso", "movel_peca", "ambiente"] },
+            "id": { "$ref": "#/$defs/id" },
+            "face": { "enum": ["interna", "externa"] },
+            "peca": { "type": "string" }
+          }
+        },
+        "textura": { "$ref": "#/$defs/ref_catalogo" },
+        "escala_amostra_mm": {
+          "description": "Tamanho físico real da amostra da textura.",
+          "$ref": "#/$defs/mm_positivo"
+        },
+        "rotacao_veio_graus": { "type": "number", "default": 0 }
+      }
+    },
+    "vista": {
+      "type": "object",
+      "required": ["id", "tipo", "pavimento_id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "tipo": {
+          "enum": [
+            "planta",
+            "frontal",
+            "fundos",
+            "lateral_esquerda",
+            "lateral_direita",
+            "corte",
+            "isometrica"
+          ]
+        },
+        "pavimento_id": { "$ref": "#/$defs/id" },
+        "plano_corte": {
+          "description": "Obrigatório quando tipo = corte.",
+          "type": "object",
+          "required": ["ponto", "normal_graus"],
+          "additionalProperties": false,
+          "properties": {
+            "ponto": { "$ref": "#/$defs/ponto" },
+            "normal_graus": { "type": "number" }
+          }
+        },
+        "escala": { "type": "string", "pattern": "^1:[0-9]+$" },
+        "formato": { "enum": ["png", "pdf", "svg"], "default": "png" }
+      },
+      "if": { "properties": { "tipo": { "const": "corte" } }, "required": ["tipo"] },
+      "then": { "required": ["plano_corte"] }
+    },
+    "ajuste": {
+      "type": "object",
+      "required": ["id", "texto_usuario", "comando"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "texto_usuario": { "type": "string" },
+        "comando": {
+          "description": "Comando estruturado. Nunca código livre: o plugin valida e executa.",
+          "type": "object",
+          "required": ["acao", "alvo_id"],
+          "properties": {
+            "acao": { "enum": ["mover", "redimensionar", "alterar_parametro", "remover", "adicionar"] },
+            "alvo_id": { "$ref": "#/$defs/id" }
+          }
+        },
+        "aplicado": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}
