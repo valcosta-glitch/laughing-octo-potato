@@ -97,6 +97,34 @@ def _poligonos(item_lista):
     return subs
 
 
+class _Desenho(dict):
+    pass
+
+
+def _girar_desenhos(desenhos, mat):
+    """Aplica a matriz de rotação da página a todos os desenhos (o PyMuPDF os devolve no espaço NÃO girado).
+    Retângulos viram 4 segmentos; o resultado só tem itens 'l', 'c' e 'qu' e o 'rect' recalculado."""
+    saida = []
+    for d in desenhos:
+        itens = []
+        for it in d["items"]:
+            if it[0] == "l":
+                itens.append(("l", it[1] * mat, it[2] * mat))
+            elif it[0] == "re":
+                q = it[1].quad * mat
+                itens += [("l", q.ul, q.ur), ("l", q.ur, q.lr), ("l", q.lr, q.ll), ("l", q.ll, q.ul)]
+            elif it[0] == "qu":
+                q = it[1] * mat
+                itens += [("l", q.ul, q.ur), ("l", q.ur, q.lr), ("l", q.lr, q.ll), ("l", q.ll, q.ul)]
+            elif it[0] == "c":
+                itens.append(("c", it[1] * mat, it[2] * mat, it[3] * mat, it[4] * mat))
+        nd = _Desenho(d)
+        nd["items"] = itens
+        nd["rect"] = d["rect"].transform(mat) if hasattr(d["rect"], "transform") else d["rect"] * mat
+        saida.append(nd)
+    return saida
+
+
 def _ler_escala(pagina):
     achou = re.search(r"1\s*[:/]\s*(\d{2,3})\b", pagina.get_text())
     return int(achou.group(1)) if achou else None
@@ -251,18 +279,26 @@ def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar
     pg = doc[pagina_n - 1]
     avisos = []
     if pg.rotation:
-        avisos.append(f"página girada {pg.rotation} graus: coordenadas lidas no espaço não girado do desenho")
+        avisos.append(f"página girada {pg.rotation} graus: desenho lido na orientação em que a folha é vista")
     if escala is None:
         escala = _ler_escala(pg)
         if escala is None:
             raise ErroPDF("escala não informada e não encontrada no texto da página: use --escala N")
         avisos.append(f"escala 1:{escala} lida do texto da página")
     desenhos = pg.get_drawings()
+    if pg.rotation:
+        desenhos = _girar_desenhos(desenhos, pg.rotation_matrix)
     cor = cor_parede or escolher_cor_parede(desenhos, escala, regiao)
     if cor is None:
         raise ErroPDF("nenhum preenchimento parece parede (faixas alongadas de 80 a 350 mm). "
                       "Paredes em linha dupla sem preenchimento ainda não são suportadas.")
-    caixa = tuple(regiao) if regiao else (0.0, 0.0, pg.rect.width, pg.rect.height)
+    if regiao:
+        caixa = tuple(regiao)
+    else:                       # caixa das paredes (e pilares) + margem: máscara menor, extração mais rápida
+        cores = {cor} | ({tuple(cor_pilar)} if cor_pilar else set())
+        rs = [d["rect"] for d in desenhos if _cor(d.get("fill")) in cores]
+        caixa = (max(0.0, min(r.x0 for r in rs) - 4), max(0.0, min(r.y0 for r in rs) - 4),
+                 min(pg.rect.width, max(r.x1 for r in rs) + 4), min(pg.rect.height, max(r.y1 for r in rs) + 4))
     m, n_poly = mascara_de(desenhos, cor, regiao, caixa)
     mm_pt = PT_MM_1 * escala
     mm_px = mm_pt / PX_POR_PT
