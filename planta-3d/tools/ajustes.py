@@ -23,6 +23,12 @@ Formas aceitas (modo "livre", o do PDF vetorial; o modo "contorno" aceita só as
   pé-direito 2,60 m                                                                                              [c]
   parede p5 espessura 15 cm | remover parede p5 | mover parede p5 10 cm para o norte (leva os vãos dela junto)
   adicionar janela de 1,20 m na parede p5 a 2 m do início [peitoril 1 m altura 1,1 m]   (início = ponta de menor coordenada)
+Móveis (modo "livre"; blocos em blocos.py: armário/roupeiro piso-teto, gabinete, rack, painel, espelho, balcão, aéreo, gaveteiro):
+  adicionar armário de 1,58 m na parede p5 lado norte a 2 m do início          (também: a 1 m do fim | encostado no início/fim)
+  adicionar gabinete de 1,20 m na parede p3 lado leste a 0,5 m do início, frente nogueira, profundidade 55 cm, elevação 20 cm
+  adicionar roupeiro de 4,18 m na parede p12 lado sul encostado no fim, piso ao teto, portas 6
+  remover móvel m2 | mover armário m2 20 cm para leste (só ao longo da parede) | móvel m2: largura 1,60 m, altura 2,40 m, frente freijó
+  Medidas que a frase não traz usam o PADRÃO do bloco (lido das pranchas, a olho) e viram AVISO para você conferir.
 Unidades: mm, cm ou m. Sem unidade: menor que 10 = metros; 100 ou mais = milímetros; entre 10 e 99 pede a unidade.
 Direções: norte = +Y (cima na planta), sul = −Y, leste = +X, oeste = −X.
 """
@@ -37,6 +43,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from blocos import APELIDOS, BLOCOS, FRENTES, LADOS, completar, extremos, faltando
 from validar import SCHEMA_PADRAO, checar_projeto
 
 
@@ -93,7 +100,8 @@ def _extremos(p):
 
 
 def _proximo_id(projeto, prefixo, extras=()):
-    usados = [p["id"] for p in _pav(projeto)["paredes"]] + [v["id"] for v in _lista_vaos(projeto)] + list(extras)
+    usados = ([p["id"] for p in _pav(projeto)["paredes"]] + [v["id"] for v in _lista_vaos(projeto)] +
+              [m["id"] for m in _pav(projeto).get("mobiliario", [])] + list(extras))
     n = max([int(re.sub(r"\D", "", i) or 0) for i in usados if i.startswith(prefixo) and not (prefixo == "p" and i.startswith("pil"))] + [0])
     return f"{prefixo}{n + 1}"
 
@@ -200,6 +208,12 @@ def interpretar(texto, projeto):
         if not m:
             raise ErroAjuste("pé-direito: faltou o valor (ex.: 'pé-direito 2,60 m')")
         return [_cmd("alterar_parametro", "pavimento", pav["id"], {"pe_direito_mm": _para_mm(m.group(1), m.group(2), "pé-direito")})]
+
+    # móveis (antes de parede e vão: a frase também cita "parede p5")
+    if re.match(r"^adicion\w*\s+(?:um |uma )?" + _PALAVRA_BLOCO + r"\b", t):
+        return _adicionar_movel(projeto, t)
+    if _REF_MOVEL.search(t):
+        return _ajustar_movel(projeto, t)
 
     # em lote: todas as janelas / portas / vãos
     m = re.match(r"^(?:em )?(?:todas as|todos os|todas|todos) (janelas|portas|vaos)\b(.*)$", t)
@@ -342,6 +356,213 @@ def interpretar(texto, projeto):
         ["remover vão 9", "fechar vão 9", "janela 3: peitoril 1,10 m", "mover janela 3 20 cm para leste", "transformar vão 4 em janela, peitoril 1 m, altura 1,1 m",
          "todas as janelas: peitoril 1 m, topo 2,10 m", "pé-direito 2,60 m", "parede p5 espessura 15 cm", "remover parede p5",
          "mover parede p5 10 cm para o norte", "adicionar janela de 1,20 m na parede p5 a 2 m do início"]))
+
+
+_PALAVRA_BLOCO = r"(roupeiro|guarda-roupa|armario|gabinete|rack|painel|espelho|balcao|aereo|gaveteiro)"
+_REF_MOVEL = re.compile(r"\b(?:movel|" + _PALAVRA_BLOCO[1:-1] + r")\s*(?:n[o°º]?\s*)?m(\d+)\b")
+_FILLER = {"a", "o", "e", "na", "no", "ao", "de", "do", "da", "em", "com", "um", "uma", "lado", "face", "pelo", "pela", "m", "cm", "mm",
+           "parede", "para", "movel", "ate", "teto", "piso", "cor", "inicio", "fim", "ponta", "dele", "dela", "vao",
+           "alterar", "mudar", "trocar", "ajustar", "definir", "veneto", "trama", "que", "tenha", "seja"}
+
+
+def _frente(txt):
+    nome = _norm(txt)
+    nome = {"freijo": "freijo", "titanio": "titanio"}.get(nome, nome)
+    if nome not in FRENTES:
+        raise ErroAjuste(f"frente '{txt}' desconhecida (conhecidas: {', '.join(sorted(FRENTES))})")
+    return nome
+
+
+def _atributos_movel(t):
+    """Atributos de móvel dentro de `t`; devolve (dict, texto_sem_os_trechos_lidos). Medidas em mm."""
+    achados = {}
+
+    def tira(regex, chave, conv):
+        nonlocal t
+        m = re.search(regex, t)
+        if m:
+            achados[chave] = conv(m)
+            t = t.replace(m.group(0), " ", 1)
+
+    tira(r"\bprofundidade\b[^0-9]{0,12}?" + _NUM, "profundidade_mm", lambda m: _para_mm(m.group(1), m.group(2), "profundidade"))
+    tira(r"\bafastamento\b[^0-9]{0,12}?" + _NUM, "afastamento_mm", lambda m: _para_mm(m.group(1), m.group(2), "afastamento"))
+    tira(r"\b(?:elevacao|elevado|elevada)\b[^0-9]{0,12}?" + _NUM, "elevacao_mm", lambda m: _para_mm(m.group(1), m.group(2), "elevação"))
+    tira(r"\ba\s+" + _NUM + r"\s+do\s+piso\b", "elevacao_mm", lambda m: _para_mm(m.group(1), m.group(2), "elevação"))
+    tira(r"\baltura\b[^0-9]{0,12}?" + _NUM, "altura_mm", lambda m: _para_mm(m.group(1), m.group(2), "altura"))
+    tira(r"\bespessura\b[^0-9]{0,12}?" + _NUM, "espessura_mm", lambda m: _para_mm(m.group(1), m.group(2), "espessura"))
+    tira(r"\blargura\b[^0-9]{0,12}?" + _NUM, "largura_mm", lambda m: _para_mm(m.group(1), m.group(2), "largura"))
+    tira(r"\bportas?\s+(\d+)\b", "portas", lambda m: int(m.group(1)))
+    tira(r"\b(\d+)\s+portas?\b", "portas", lambda m: int(m.group(1)))
+    tira(r"\b(?:frente|cor)\s+(?:em |na cor |de )?([a-z]+)", "frente", lambda m: _frente(m.group(1)))
+    tira(r"\b(?:piso[- ]?(?:ao |a )?teto|ate o teto)\b", "piso_teto", lambda m: True)
+    return achados, t
+
+
+def _sobra(t):
+    """Palavras que a frase tem e nada leu. Para recusar em vez de ignorar em silêncio."""
+    t = re.sub(r"\bpe[- ]?direito\b", " ", t)
+    return [w for w in re.findall(r"[a-z]+", t) if w not in _FILLER]
+
+
+def _movel(projeto, mid):
+    for m in _pav(projeto).get("mobiliario", []):
+        if m["id"] == mid:
+            return m
+    existentes = ", ".join(m["id"] for m in _pav(projeto).get("mobiliario", [])) or "nenhum"
+    raise ErroAjuste(f"móvel '{mid}' não existe (existentes: {existentes})")
+
+
+def _folga_ponta(projeto, p, lado, fim):
+    """Posição (mm a partir da ponta de menor coordenada de p) em que a ponta do móvel encosta na face da parede que fecha o canto."""
+    eixo, c, a0, a1 = extremos(p)
+    ponta = a1 if fim else a0
+    t = p["espessura_mm"]
+    face = c + (t / 2 if lado in ("norte", "leste") else -t / 2)
+    melhor = None
+    for q in _pav(projeto)["paredes"]:
+        if q["id"] == p["id"]:
+            continue
+        e2, c2, b0, b1 = extremos(q)
+        if e2 == eixo or abs(c2 - ponta) > max(q["espessura_mm"], 200):
+            continue
+        if lado in ("norte", "leste"):
+            fecha = b0 <= face + 60 and b1 > face + 60         # a perpendicular sai da parede para o lado do móvel (60 mm: pilar de canto)
+        else:
+            fecha = b1 >= face - 60 and b0 < face - 60
+        if not fecha:
+            continue
+        interna = (c2 - q["espessura_mm"] / 2) if fim else (c2 + q["espessura_mm"] / 2)
+        melhor = interna if melhor is None else (min(melhor, interna) if fim else max(melhor, interna))
+    pos = (melhor if melhor is not None else ponta)
+    return min(max(pos, a0), a1) - a0                          # nunca além da ponta da parede
+
+
+def _adicionar_movel(projeto, t):
+    if not _livre(projeto):
+        raise ErroAjuste("adicionar móvel por frase só existe no modo 'livre'")
+    mb = re.match(r"^adicion\w*\s+(?:um |uma )?" + _PALAVRA_BLOCO + r"\b(.*)$", t)
+    palavra, resto = mb.group(1), mb.group(2)
+    bloco = "aereo_2_portas" if (palavra == "aereo" or (palavra == "armario" and re.search(r"\baereo\b", resto))) else APELIDOS[palavra]
+    resto = re.sub(r"\baereo\b", " ", resto) if bloco == "aereo_2_portas" and palavra == "armario" else resto
+    mp = _REF_PAREDE.search(resto)
+    if not mp:
+        raise ErroAjuste("diga a parede (ex.: 'na parede p5')")
+    pid = mp.group(1) if not mp.group(1).isdigit() else f"p{mp.group(1)}"
+    p = _parede(projeto, pid)
+    if p.get("tipo") == "pilar":
+        raise ErroAjuste("não dá para apoiar móvel num pilar")
+    resto = _REF_PAREDE.sub(" ", resto)
+    eixo, c, a0, a1 = extremos(p)
+    ml = re.search(r"\b(?:lado|face)\s+(norte|sul|leste|oeste)\b", resto)
+    if not ml:
+        raise ErroAjuste(f"diga o lado da parede {pid}: {' ou '.join(LADOS[eixo])} (ex.: 'lado {LADOS[eixo][0]}')")
+    lado = ml.group(1)
+    if lado not in LADOS[eixo]:
+        raise ErroAjuste(f"a parede {pid} corre ao longo de {eixo.upper()}: o lado é {' ou '.join(LADOS[eixo])}, não {lado}")
+    resto = resto.replace(ml.group(0), " ", 1)
+    atr, resto2 = _atributos_movel(resto)
+    mw = re.search(r"\bde\s+" + _NUM, resto2)
+    if mw and "largura_mm" not in atr:
+        atr["largura_mm"] = _para_mm(mw.group(1), mw.group(2), "largura")
+        resto2 = resto2.replace(mw.group(0), " ", 1)
+    if "largura_mm" not in atr:
+        raise ErroAjuste("faltou a largura (ex.: 'armário de 1,58 m')")
+    W = atr["largura_mm"]
+    resto = resto2
+    mi = re.search(r"\ba\s+" + _NUM + r"\s+do\s+inicio\b", resto)
+    mf = re.search(r"\ba\s+" + _NUM + r"\s+do\s+fim\b", resto)
+    me = re.search(r"\bencostad[oa]\s+(?:no|na|ao|a)\s+(inicio|fim)\b", resto)
+    if sum(x is not None for x in (mi, mf, me)) != 1:
+        raise ErroAjuste("diga a posição: 'a 2 m do início', 'a 1 m do fim' ou 'encostado no início/fim'")
+    comp = a1 - a0
+    if mi:
+        s0 = _para_mm(mi.group(1), mi.group(2), "posição")
+        resto = resto.replace(mi.group(0), " ", 1)
+    elif mf:
+        s0 = comp - _para_mm(mf.group(1), mf.group(2), "posição") - W
+        resto = resto.replace(mf.group(0), " ", 1)
+    else:
+        s0 = _folga_ponta(projeto, p, lado, me.group(1) == "fim") - (W if me.group(1) == "fim" else 0)
+        resto = resto.replace(me.group(0), " ", 1)
+    sobra = _sobra(resto)
+    if sobra:
+        raise ErroAjuste("não entendi: " + ", ".join(f"'{w}'" for w in sobra))
+    padroes = []
+    par = {"largura_mm": W}
+    if "espessura_chapa_mm" in BLOCOS[bloco]["padrao"] and "espessura_mm" in atr:
+        atr["espessura_chapa_mm"] = atr.pop("espessura_mm")
+    for k in ("profundidade_mm", "espessura_mm", "espessura_chapa_mm", "portas", "frente"):
+        if k in atr:
+            par[k] = atr[k]
+    if "altura_mm" in atr:
+        par["altura_mm"] = atr["altura_mm"]
+        par["ate_o_teto"] = False
+    if atr.get("piso_teto"):
+        if "altura_mm" in atr:
+            raise ErroAjuste("informe altura OU piso-teto, não os dois")
+        par["ate_o_teto"] = True
+    cat = BLOCOS[bloco]
+    completo = completar(bloco, par)
+    falta = faltando(bloco, completo)
+    if falta:
+        dicas = {"altura_mm": "altura 90 cm", "profundidade_mm": "profundidade 55 cm", "espessura_mm": "espessura 18 mm"}
+        raise ErroAjuste(f"faltou {', '.join(k.replace('_mm', '') for k in falta)} (ex.: '{dicas.get(falta[0], falta[0])}') — este bloco não tem padrão")
+    for k in ("profundidade_mm", "altura_mm", "espessura_chapa_mm", "espessura_mm", "frente"):
+        if k in cat["padrao"] and k not in par and not (k == "altura_mm" and completo.get("ate_o_teto")):
+            padroes.append(f"{k.replace('_mm', '')} {completo[k]:g} mm" if isinstance(completo[k], (int, float)) else f"{k} {completo[k]}")
+    elev = atr.get("elevacao_mm")
+    if elev is None:
+        elev = cat["elevacao_mm"]
+        if elev:
+            padroes.append(f"elevação {elev:g} mm")
+    apoio = {"parede_id": pid, "lado": lado, "distancia_do_inicio_mm": round(s0, 1), "afastamento_mm": atr.get("afastamento_mm", 0.0)}
+    if elev:
+        apoio["elevacao_mm"] = elev
+    mid = _proximo_id(projeto, "m")
+    return [_cmd("adicionar", "movel", mid, {"bloco": bloco, "apoio": apoio, "parametros": par, "padroes_usados": padroes})]
+
+
+def _ajustar_movel(projeto, t):
+    if not _livre(projeto):
+        raise ErroAjuste("ajuste de móvel por frase só existe no modo 'livre'")
+    mm = _REF_MOVEL.search(t)
+    ids = {"m" + x.group(1) for x in _REF_MOVEL.finditer(t)}
+    if len(ids) != 1:
+        raise ErroAjuste("cite exatamente um móvel (ex.: 'móvel m2')")
+    mid = "m" + mm.group(1)
+    mv = _movel(projeto, mid)
+    resto = _REF_MOVEL.sub(" ", t)
+    if re.match(r"^(remov|apag|tir|delet|exclu)\w*", t):
+        return [_cmd("remover", "movel", mid)]
+    if re.match(r"^(mov(?:er|a|e)|desloc\w*|empurr\w*)\b", t):          # "movel m1: ..." não é "mover"
+        p = _parede(projeto, mv["apoio"]["parede_id"])
+        eixo, c, a0, a1 = extremos(p)
+        eixo_mov, sinal = _direcao(resto)
+        if eixo_mov != eixo:
+            raise ErroAjuste(f"o móvel {mid} está numa parede que corre ao longo de {eixo.upper()}: só se move "
+                             f"{'para leste/oeste' if eixo == 'x' else 'para norte/sul'}")
+        m2 = re.search(_NUM, re.sub(r"\b(norte|sul|leste|oeste|cima|baixo|direita|esquerda)\b", " ", resto))
+        if not m2:
+            raise ErroAjuste("faltou a distância (ex.: 'mover móvel m2 20 cm para leste')")
+        return [_cmd("mover", "movel", mid, {"delta_mm": sinal * _para_mm(m2.group(1), m2.group(2), "distância")})]
+    atr, sobra_t = _atributos_movel(resto)
+    sobra = _sobra(sobra_t)
+    if sobra:
+        raise ErroAjuste("não entendi: " + ", ".join(f"'{w}'" for w in sobra))
+    if not atr:
+        raise ErroAjuste(f"móvel {mid}: não entendi o que alterar (aceito largura, altura, profundidade, elevação, afastamento, portas, frente, piso ao teto)")
+    par = {}
+    if "espessura_chapa_mm" in BLOCOS[mv["bloco"]["id"]]["padrao"] and "espessura_mm" in atr:
+        atr["espessura_chapa_mm"] = atr.pop("espessura_mm")
+    for k, v in atr.items():
+        if k == "piso_teto":
+            par["ate_o_teto"] = True
+            par["altura_mm"] = None            # volta a acompanhar o pé-direito
+        else:
+            par[k] = v
+    if "altura_mm" in atr:
+        par["ate_o_teto"] = False
+    return [_cmd("alterar_parametro", "movel", mid, par)]
 
 
 def _parede_do_vao(v):
@@ -497,6 +718,36 @@ def _executar(projeto, c):
             else:
                 _marcar_usuario(v, "ajuste digitado")
             return _cmd(acao, "vao", aid, antigo)
+    if alvo == "movel":
+        lista = pav.setdefault("mobiliario", [])
+        if acao == "remover":
+            m = _movel(projeto, aid)
+            lista.remove(m)
+            if not lista:
+                pav.pop("mobiliario")                   # desfazer a primeira adição devolve o projeto exatamente como era
+            return _cmd("adicionar", "movel", aid, {k: v for k, v in m.items() if k != "id"})
+        if acao == "adicionar":
+            if any(m["id"] == aid for m in lista):
+                raise ErroAjuste(f"já existe o móvel '{aid}'")
+            lista.append({"id": aid, "bloco": {"catalogo": "marcenaria", "id": par["bloco"], "versao": 1} if isinstance(par.get("bloco"), str) else par["bloco"],
+                          "apoio": copy.deepcopy(par["apoio"]), "parametros": copy.deepcopy(par["parametros"])})
+            return _cmd("remover", "movel", aid)
+        m = _movel(projeto, aid)
+        if acao == "mover":
+            d = par["delta_mm"]
+            m["apoio"]["distancia_do_inicio_mm"] = round(m["apoio"]["distancia_do_inicio_mm"] + d, 1)
+            return _cmd("mover", "movel", aid, {"delta_mm": -d})
+        if acao == "alterar_parametro":
+            no_apoio = ("elevacao_mm", "afastamento_mm")
+            antigo = {}
+            for k, val in par.items():
+                alvo_d = m["apoio"] if k in no_apoio else m["parametros"]
+                antigo[k] = alvo_d.get(k)
+                if val is None:
+                    alvo_d.pop(k, None)
+                else:
+                    alvo_d[k] = val
+            return _cmd("alterar_parametro", "movel", aid, antigo)
     raise ErroAjuste(f"comando não suportado: {acao} {alvo}")
 
 
@@ -511,7 +762,8 @@ def _validar(projeto):
     return avisos
 
 
-_OCULTOS = ("inicio", "fim", "centro", "origem", "confianca", "evidencia", "eixo", "_meta", "perpendicular", "tipo_alvo")
+_OCULTOS = ("inicio", "fim", "centro", "origem", "confianca", "evidencia", "eixo", "_meta", "perpendicular", "tipo_alvo",
+            "apoio", "parametros", "padroes_usados")
 
 
 def descrever(c):
@@ -524,7 +776,12 @@ def descrever(c):
             extra = f" ({q['inicio']['x']:g},{q['inicio']['y']:g})→({q['fim']['x']:g},{q['fim']['y']:g})"
         elif "centro" in q:
             extra = f" {q.get('tipo', '')} em ({q['centro']['x']:g},{q['centro']['y']:g})"
-    det = ", ".join(f"{k}={('%g' % v) if isinstance(v, (int, float)) else v}" for k, v in p.items())
+    if c["alvo"] == "movel" and c["acao"] == "adicionar" and c.get("parametros"):
+        q = c["parametros"]
+        a = q["apoio"]
+        extra = f" {q['bloco']} na parede {a['parede_id']} lado {a['lado']}, {a['distancia_do_inicio_mm']:g} mm do início"
+        p = {**{k: v for k, v in q["parametros"].items()}, **({"elevacao_mm": a["elevacao_mm"]} if "elevacao_mm" in a else {})}
+    det = ", ".join(f"{k}={('%g' % v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v}" for k, v in p.items())
     return f"{c['acao']} {c['alvo']} {c['alvo_id']}{extra}" + (f": {det}" if det else "")
 
 
@@ -551,6 +808,11 @@ def aplicar_frases(projeto, frases):
                          "comando": {**c, "inverso": inverso}, "aplicado": True})
         por_frase.append(cmds)
     avisos = _validar(novo)
+    for cmds in por_frase:
+        for c in cmds:
+            if c["alvo"] == "movel" and c["acao"] == "adicionar" and c["parametros"].get("padroes_usados"):
+                avisos.append(f"móvel {c['alvo_id']}: usei o PADRÃO do bloco em " + ", ".join(c["parametros"]["padroes_usados"]) +
+                              " (lido das pranchas, a olho): confira e, se for outro, diga na frase")
     avisos += [f"frase sem efeito, ignorada: {m}" for m in sem_efeito]
     if any(c["acao"] == "mover" and c["alvo"] == "parede" for cmds in por_frase for c in cmds):
         avisos.append("parede movida: as paredes que se encontram com ela NÃO foram esticadas ou encurtadas; confira as junções no overlay/3D")

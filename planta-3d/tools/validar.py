@@ -13,6 +13,8 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from blocos import BLOCOS, FRENTES, LADOS, altura_do_movel, caixa_parede, extremos, completar, faltando, retangulo_movel
+
 SCHEMA_PADRAO = Path(__file__).resolve().parent.parent / "schema" / "projeto.schema.json"
 
 
@@ -59,8 +61,9 @@ def checar_livre(pav, erros, avisos):
     ctx = f"pavimento '{pav['id']}'"
     checar_ids_unicos(pav["paredes"], f"{ctx} paredes", erros)
     checar_ids_unicos(pav.get("vaos", []), f"{ctx} vãos", erros)
-    if pav.get("aberturas") or pav.get("ambientes") or pav.get("mobiliario"):
-        erros.append(f"{ctx}: topologia 'livre' usa 'vaos'; 'aberturas', 'ambientes' e 'mobiliario' ainda não são suportados")
+    checar_ids_unicos(pav.get("mobiliario", []), f"{ctx} mobiliario", erros)
+    if pav.get("aberturas") or pav.get("ambientes"):
+        erros.append(f"{ctx}: topologia 'livre' usa 'vaos' e móveis por 'lado'; 'aberturas' e 'ambientes' não são suportados")
     caixas = []
     for p in pav["paredes"]:
         if comprimento(p) == 0:
@@ -92,6 +95,78 @@ def checar_livre(pav, erros, avisos):
             erros.append(f"vão '{v['id']}': ultrapassa o pé-direito")
         if v["tipo"] == "porta" and v.get("peitoril_mm", 0) != 0:
             avisos.append(f"vão '{v['id']}': porta com peitoril diferente de zero")
+    checar_moveis_livre(pav, erros, avisos)
+
+
+def checar_moveis_livre(pav, erros, avisos):
+    """Móveis na topologia livre: cabem na parede, na altura, sem bater em outra parede, em outro móvel ou num vão."""
+    paredes = {p["id"]: p for p in pav["paredes"]}
+    tol = 1.0
+    ocupados = []                                  # (id, parede_id, lado, s0, s1, z0, z1, retângulo em planta)
+    for m in pav.get("mobiliario", []):
+        mid, ap, par = m["id"], m["apoio"], m["parametros"]
+        if m["bloco"]["id"] not in BLOCOS:
+            erros.append(f"móvel '{mid}': bloco '{m['bloco']['id']}' sem desenho (conhecidos: {', '.join(sorted(BLOCOS))})")
+            continue
+        par = completar(m["bloco"]["id"], par)
+        falta = faltando(m["bloco"]["id"], par)
+        if falta:
+            erros.append(f"móvel '{mid}': faltam parâmetros {', '.join(falta)}")
+            continue
+        if par.get("frente") is not None and par["frente"] not in FRENTES:
+            erros.append(f"móvel '{mid}': frente '{par['frente']}' desconhecida (conhecidas: {', '.join(sorted(FRENTES))})")
+        p = paredes.get(ap["parede_id"])
+        if p is None:
+            erros.append(f"móvel '{mid}': parede '{ap['parede_id']}' não existe")
+            continue
+        if p.get("tipo") == "pilar":
+            erros.append(f"móvel '{mid}': não se apoia em pilar ('{p['id']}')")
+            continue
+        if abs(p["inicio"]["x"] - p["fim"]["x"]) > 1e-6 and abs(p["inicio"]["y"] - p["fim"]["y"]) > 1e-6:
+            continue                               # parede não ortogonal já foi reportada
+        lado = ap.get("lado")
+        eixo, c, a0, a1 = extremos(p)
+        if lado is None:
+            erros.append(f"móvel '{mid}': falta o lado da parede '{p['id']}' ({' ou '.join(LADOS[eixo])})")
+            continue
+        if lado not in LADOS[eixo]:
+            erros.append(f"móvel '{mid}': a parede '{p['id']}' corre ao longo de {eixo.upper()}; o lado é {' ou '.join(LADOS[eixo])}, não {lado}")
+            continue
+        W, D = par["largura_mm"], par.get("profundidade_mm", par.get("espessura_mm"))
+        H = altura_do_movel(pav, m)
+        s0 = ap["distancia_do_inicio_mm"]
+        s1 = s0 + W
+        z0 = ap.get("elevacao_mm", 0)
+        z1 = z0 + H
+        if s1 > (a1 - a0) + tol:
+            erros.append(f"móvel '{mid}': passa do fim da parede '{p['id']}' ({s1:.0f} mm de {a1 - a0:.0f} mm)")
+        if z1 > pav["pe_direito_mm"] + tol:
+            erros.append(f"móvel '{mid}': ultrapassa o pé-direito ({z1:.0f} mm de {pav['pe_direito_mm']:.0f} mm)")
+        ret = retangulo_movel(p, m, W, D)
+        for q in pav["paredes"]:
+            if q["id"] == p["id"] or abs(q["inicio"]["x"] - q["fim"]["x"]) > 1e-6 and abs(q["inicio"]["y"] - q["fim"]["y"]) > 1e-6:
+                continue
+            bx0, bx1, by0, by1 = caixa_parede(q)
+            dx, dy = min(ret[1], bx1) - max(ret[0], bx0), min(ret[3], by1) - max(ret[2], by0)
+            if dx > 20 and dy > 20:
+                erros.append(f"móvel '{mid}' bate na parede '{q['id']}' ({dx:.0f} x {dy:.0f} mm dentro dela); ajuste a posição ou a largura")
+        for v in pav.get("vaos", []):
+            if v["eixo"] != eixo or abs((v["centro"]["y"] if eixo == "x" else v["centro"]["x"]) - c) > p["espessura_mm"] / 2 + 1:
+                continue
+            ca = v["centro"]["x"] if eixo == "x" else v["centro"]["y"]
+            ov_s = min(a0 + s1, ca + v["largura_mm"] / 2) - max(a0 + s0, ca - v["largura_mm"] / 2)
+            ov_z = min(z1, v.get("peitoril_mm", 0) + v["altura_mm"]) - max(z0, v.get("peitoril_mm", 0))
+            if ov_s > tol and ov_z > tol:
+                avisos.append(f"móvel '{mid}' cobre o vão '{v['id']}' ({ov_s:.0f} mm de largura)")
+        for o in ocupados:
+            ov_z = min(z1, o[6]) - max(z0, o[5])
+            if o[1] == p["id"] and o[2] == lado and min(s1, o[4]) - max(s0, o[3]) > tol and ov_z > tol:
+                erros.append(f"móveis '{o[0]}' e '{mid}' se sobrepõem na parede '{p['id']}' (lado {lado})")
+            elif o[1] != p["id"] and ov_z > tol:
+                dx, dy = min(ret[1], o[7][1]) - max(ret[0], o[7][0]), min(ret[3], o[7][3]) - max(ret[2], o[7][2])
+                if dx > 20 and dy > 20:
+                    avisos.append(f"móveis '{o[0]}' e '{mid}' se cruzam em planta ({dx:.0f} x {dy:.0f} mm)")
+        ocupados.append((mid, p["id"], lado, s0, s1, z0, z1, ret))
 
 
 def checar_pavimento(pav, vistas, erros, avisos):
@@ -164,9 +239,9 @@ def checar_pavimento(pav, vistas, erros, avisos):
         if parede is None:
             erros.append(f"móvel '{m['id']}': parede '{m['apoio']['parede_id']}' não existe")
             continue
-        amb = ambientes.get(m["ambiente_id"])
+        amb = ambientes.get(m.get("ambiente_id"))
         if amb is None:
-            erros.append(f"móvel '{m['id']}': ambiente '{m['ambiente_id']}' não existe")
+            erros.append(f"móvel '{m['id']}': ambiente '{m.get('ambiente_id')}' não existe (obrigatório no modo contorno)")
         elif parede["id"] not in amb["paredes_ids"]:
             erros.append(f"móvel '{m['id']}': parede '{parede['id']}' não pertence ao ambiente '{amb['id']}'")
         largura = m["parametros"].get("largura_mm")

@@ -245,7 +245,21 @@ Regras de projeto, todas testadas:
 
 **Prova com a planta real (Guarajuba, superior).** As correções que eu tinha feito à mão e por arquivo (remover a janela falsa, pé-direito, altura de porta e janela) foram refeitas **só com 4 frases** a partir da extração bruta (valores padrão): geometria, origem e confiança ficaram **idênticas** ao modelo já salvo no SketchUp.
 
-**Limites:** só frases nas formas acima (frase livre ainda não); no modo "contorno" (DXF) valem só as frases de vão (remover, altura/peitoril, tipo em lote, pé-direito); adicionar parede por frase não existe (só pelo comando estruturado); mover parede não ajusta as paredes vizinhas; móveis ainda não têm ajustes.
+**Limites:** só frases nas formas acima (frase livre ainda não); no modo "contorno" (DXF) valem só as frases de vão (remover, altura/peitoril, tipo em lote, pé-direito) e móveis por frase não existem; adicionar parede por frase não existe (só pelo comando estruturado); mover parede não ajusta as paredes vizinhas.
+
+### Marcenaria por frase (modo livre)
+
+Móveis se apoiam **numa parede e num lado dela** (`apoio.parede_id` + `apoio.lado` = norte/sul para parede horizontal, leste/oeste para vertical; a distância é medida da ponta de menor coordenada). O validador confere que o móvel **cabe** na parede, **não passa do pé-direito**, **não bate** em outra parede (erro), **não se sobrepõe** a outro móvel (erro) e avisa quando **cobre um vão**.
+
+| Frase (exemplos) | O que faz |
+|---|---|
+| `adicionar armário de 1,58 m na parede p5 lado norte a 2 m do início` | roupeiro piso-teto (também `a 1 m do fim` e `encostado no início/fim`, que respeita a parede que fecha o canto) |
+| `adicionar gabinete de 1,20 m na parede p3 lado leste a 0,5 m do início, profundidade 55 cm, frente nogueira` | gabinete suspenso (elevação padrão 20 cm) |
+| `adicionar rack de 2,20 m ...` · `adicionar painel de 2,44 m ...` · `adicionar espelho de 1,2 m ...` · `adicionar balcão de 1 m ..., altura 90 cm, profundidade 60 cm` | rack suspenso (24 cm do piso), painel, espelho, balcão, aéreo, gaveteiro |
+| `remover móvel m2` · `mover armário m2 20 cm para leste` (só ao longo da parede) | |
+| `móvel m1: largura 1,60 m, altura 2,40 m, frente freijó, portas 4` · `móvel m1: piso ao teto` | altera; piso-teto acompanha o pé-direito |
+
+As medidas que a frase não traz usam o **padrão do bloco** (`tools/blocos.py`, lido das pranchas de detalhe **a olho**, sem conferir cota): roupeiro profundidade 55 cm e zócalo 10 cm; gabinete 85 cm de altura, 48 cm de profundidade, 20 cm do piso; rack 36 × 40 cm, 24 cm do piso; painel 1,20 m; espelho 1,00 m a 1,05 m do piso; chapa 15 mm; portas ≈ 60 cm cada. Cada uso de padrão vira **AVISO** para você conferir. Frentes: branco, marula, titânio, freijó, nogueira, verde, espelho (**cores aproximadas**; texturas reais virão do catálogo de acabamentos). Caixaria sempre branca. O SketchUp recebe cada chapa como grupo nomeado e a **lista de corte** sai no resultado.
 
 ## Converter um DXF (só até o JSON)
 
@@ -293,7 +307,7 @@ Limites: usa só o primeiro pavimento; só os três blocos acima têm desenho; a
 
 ## Limitações conhecidas (versão 0.1.0)
 
-- O conversor aceita um único contorno fechado. Móveis só encostados numa parede e alinhados a ela (sem canto em L de móveis, ilhas nem móveis girados). Várias peças e T só existem pelo caminho PDF vetorial (topologia livre, sem móveis); paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
+- O conversor aceita um único contorno fechado. Móveis só encostados numa parede e alinhados a ela (sem canto em L de móveis, ilhas nem móveis girados). Várias peças e T só existem pelo caminho PDF vetorial (topologia livre; móveis por parede e lado); paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
 - Imagem: ver a seção própria (só paredes ortogonais, um contorno, sem móveis). PDF vetorial: ver a seção própria (vários cômodos, paredes cheias ou em contornos aninhados; linhas soltas sem polígono não).
 - Polilinhas com arco são recusadas. Blocos (`INSERT`) de porta/janela e cotas escritas (OCR) não são lidos.
 

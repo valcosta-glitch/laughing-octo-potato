@@ -225,7 +225,7 @@
           }
         },
         "mobiliario": {
-          "description": "PREVISTO (fase 4). Pode ficar vazio na fase 1.",
+          "description": "Marcenaria. Pode ficar vazio. Contorno: ambiente_id + parede do contorno. Livre: parede + lado.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/movel"
@@ -398,7 +398,6 @@
       "required": [
         "id",
         "bloco",
-        "ambiente_id",
         "apoio",
         "parametros"
       ],
@@ -411,6 +410,7 @@
           "$ref": "#/$defs/ref_catalogo"
         },
         "ambiente_id": {
+          "description": "Obrigatório no modo 'contorno'. Na topologia 'livre' não há ambientes: o móvel se apoia na parede e no lado dela.",
           "$ref": "#/$defs/id"
         },
         "apoio": {
@@ -425,6 +425,10 @@
           "properties": {
             "parede_id": {
               "$ref": "#/$defs/id"
+            },
+            "lado": {
+              "description": "Topologia 'livre': face da parede em que o móvel encosta (norte/sul para parede horizontal, leste/oeste para vertical). A distância é medida da ponta de MENOR coordenada da parede.",
+              "enum": ["norte", "sul", "leste", "oeste"]
             },
             "distancia_do_inicio_mm": {
               "type": "number",
@@ -616,7 +620,8 @@
               "enum": [
                 "vao",
                 "parede",
-                "pavimento"
+                "pavimento",
+                "movel"
               ]
             },
             "parametros": {

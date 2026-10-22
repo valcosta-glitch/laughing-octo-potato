@@ -1,8 +1,11 @@
-# Blocos de marcenaria (balcão e aéreo de 2 portas, gaveteiro de N gavetas), peça por peça, para o conector Trimble SketchUp.
+# Blocos de marcenaria, peça por peça, para o conector Trimble SketchUp: balcão e aéreo de 2 portas, gaveteiro de N gavetas
+# (modo contorno e livre) e, das pranchas de detalhe, roupeiro piso-teto, gabinete e rack suspensos, painel e espelho.
 #
-# Rodar DEPOIS de sketchup_paredes.py e sketchup_comum.py. Espera uma variável global `moveis`:
-#   [{"id", "bloco": "balcao_2_portas" | "aereo_2_portas" | "gaveteiro_3_gavetas", "parede_id", "distancia_do_inicio_mm",
-#     "afastamento_mm", "elevacao_mm", "parametros": {...}}]   (tudo em mm)
+# Rodar DEPOIS de sketchup_paredes.py (ou sketchup_livre.py) e sketchup_comum.py. Espera uma variável global `moveis`:
+#   [{"id", "bloco": <ver BLOCOS abaixo>, "parede_id", "distancia_do_inicio_mm", "afastamento_mm", "elevacao_mm",
+#     "lado": "norte"|"sul"|"leste"|"oeste"   (SÓ no modo livre: face da parede onde encosta; distância da ponta de menor coordenada),
+#     "parametros": {...}}]   (tudo em mm)
+# No modo contorno a parede vem do contexto (ctx["paredes"]); no livre o quadro da face é montado aqui a partir de `projeto`.
 #
 # Cada móvel é um grupo com uma peça (chapa) por subgrupo, nomeada para virar lista de corte.
 # Convenção da peça: espessura = menor dimensão; comprimento = maior; largura = a do meio.
@@ -31,6 +34,20 @@ FOLGA_CORREDICA = 13.0     # de cada lado, entre a lateral do corpo e a lateral 
 
 mat_corpo = get_or_create_material("MDF_Branco", 240, 240, 235)
 mat_verde = get_or_create_material("MDF_Verde", 96, 140, 120)
+
+
+def quadro_lado(par, lado):
+    """Quadro (A, u, nrm) de UMA face de uma parede ortogonal do modo livre. nrm aponta para dentro do cômodo (lado pedido)."""
+    ax, ay, bx, by = par["inicio"][0], par["inicio"][1], par["fim"][0], par["fim"][1]
+    t = par["espessura_mm"] * MM
+    if abs(ay - by) < 1e-6:
+        c, lo, hi = ay * MM, min(ax, bx) * MM, max(ax, bx) * MM
+        A, u = ((lo, c), (1.0, 0.0)) if lado == "norte" else ((hi, c), (-1.0, 0.0))
+    else:
+        c, lo, hi = ax * MM, min(ay, by) * MM, max(ay, by) * MM
+        A, u = ((c, hi), (0.0, -1.0)) if lado == "leste" else ((c, lo), (0.0, 1.0))
+    return {"id": par["id"], "A": A, "u": u, "nrm": (-u[1], u[0]), "L": hi - lo, "t": t, "off_in": t / 2,
+            "invertido": u[0] < 0 or u[1] < 0}
 
 corte = []   # lista de corte (mm)
 
@@ -120,16 +137,62 @@ def gaveteiro(asm, w, base, p):
         peca(asm, w, base, g + "Fundo", a0 + GAVETA_ESP, a1 - GAVETA_ESP, d0 + GAVETA_ESP, d1 - GAVETA_ESP, zc, zc + GAVETA_FUNDO, mat_corpo)
 
 
-BLOCOS = {"balcao_2_portas": balcao, "aereo_2_portas": aereo, "gaveteiro_3_gavetas": gaveteiro}
+def caixa_portas(asm, w, base, p):
+    """Roupeiro piso-teto, gabinete e rack suspensos: caixa branca + frentes na cor `frente_rgb`. socalo 0 = suspenso."""
+    W, H, D = p["largura_mm"], p["altura_mm"], p["profundidade_mm"]
+    e = p["espessura_chapa_mm"]
+    soc = p.get("socalo_mm", 0.0)
+    Dc = D - e
+    mat_f = get_or_create_material("Frente_" + p.get("frente", "branco"), p["frente_rgb"][0], p["frente_rgb"][1], p["frente_rgb"][2])
+    peca(asm, w, base, "Lateral_Esq", 0, e, 0, Dc, 0, H, mat_corpo)
+    peca(asm, w, base, "Lateral_Dir", W - e, W, 0, Dc, 0, H, mat_corpo)
+    peca(asm, w, base, "Base", e, W - e, FUNDO_ESP, Dc, soc, soc + e, mat_corpo)
+    peca(asm, w, base, "Topo", e, W - e, FUNDO_ESP, Dc, H - e, H, mat_corpo)
+    peca(asm, w, base, "Fundo", e, W - e, 0, FUNDO_ESP, soc + e, H - e, mat_corpo)
+    if soc > 0:
+        peca(asm, w, base, "Zocalo", e, W - e, Dc - RECUO_ZOCALO, Dc - RECUO_ZOCALO + e, 0, soc, mat_corpo)
+    nd = p.get("divisorias", 0)
+    if nd > 0:
+        vao = ((W - 2 * e) - nd * e) / (nd + 1)
+        for i in range(nd):
+            a0 = e + (i + 1) * vao + i * e
+            peca(asm, w, base, "Divisoria_" + str(i + 1), a0, a0 + e, FUNDO_ESP, Dc, soc + e, H - e, mat_corpo)
+    n = p.get("portas", 2)
+    larg = (W - (n + 1) * FOLGA_PORTA) / n
+    for i in range(n):
+        a0 = FOLGA_PORTA + i * (larg + FOLGA_PORTA)
+        peca(asm, w, base, "Porta_" + str(i + 1), a0, a0 + larg, Dc, D, soc + FOLGA_PORTA, H - FOLGA_PORTA, mat_f)
+
+
+def painel(asm, w, base, p):
+    """Painel ou espelho: uma chapa na parede."""
+    mat_p = get_or_create_material("Frente_" + p.get("frente", "nogueira"), p["frente_rgb"][0], p["frente_rgb"][1], p["frente_rgb"][2])
+    peca(asm, w, base, "Painel", 0, p["largura_mm"], 0, p["espessura_mm"], 0, p["altura_mm"], mat_p)
+
+
+BLOCOS = {"balcao_2_portas": balcao, "aereo_2_portas": aereo, "gaveteiro_3_gavetas": gaveteiro,
+          "roupeiro_piso_teto": caixa_portas, "gabinete_suspenso": caixa_portas, "rack_suspenso": caixa_portas,
+          "painel_parede": painel, "espelho_parede": painel}
 
 projeto_grp = None
 for g in model.get_entities().get_groups():
     if g.get_name() == ctx["nome"]:
         projeto_grp = g
 
+paredes_livre = {}
+for q in projeto["paredes"]:
+    paredes_livre[q["id"]] = q
+
 for m in moveis:
-    w = paredes_por_id[m["parede_id"]]
-    base = {"id": m["id"], "s": m["distancia_do_inicio_mm"] * MM, "afast": m.get("afastamento_mm", 0) * MM,
+    if "lado" in m:
+        w = quadro_lado(paredes_livre[m["parede_id"]], m["lado"])
+        s_mm = m["distancia_do_inicio_mm"]
+        if w["invertido"]:                  # o quadro corre ao contrário: s = comprimento - (distância + largura)
+            s_mm = w["L"] / MM - (s_mm + m["parametros"]["largura_mm"])
+    else:
+        w = paredes_por_id[m["parede_id"]]
+        s_mm = m["distancia_do_inicio_mm"]
+    base = {"id": m["id"], "s": s_mm * MM, "afast": m.get("afastamento_mm", 0) * MM,
             "z": m.get("elevacao_mm", 0) * MM}
     asm = Group()
     projeto_grp.get_entities().add_group(asm)

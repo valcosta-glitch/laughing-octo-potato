@@ -11,7 +11,7 @@
 #    "paredes": [{"id", "inicio": [x, y], "fim": [x, y], "espessura_mm", "tipo": "parede"|"pilar"}],
 #    "vaos":    [{"id", "tipo": "porta"|"janela", "eixo": "x"|"y", "centro": [x, y], "largura_mm", "espessura_mm",
 #                 "altura_mm", "peitoril_mm"}]}
-# Limites: paredes e vãos ortogonais; sem móveis neste modo; o piso é uma laje retangular sob a caixa envolvente.
+# Limites: paredes e vãos ortogonais; os móveis (se houver) vêm de sketchup_moveis.py; o piso é uma laje retangular sob a caixa envolvente.
 
 ctx = session_state["ctx"]
 prism_faces = ctx["prism_faces"]

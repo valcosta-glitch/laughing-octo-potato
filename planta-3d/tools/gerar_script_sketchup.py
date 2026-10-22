@@ -10,12 +10,12 @@ Gera um script único (paredes, piso/porta/janela, móveis, seis cenas e valida�
 build_model com clean=true.
 
 Dois modos, escolhidos por pavimento.topologia: "contorno" (padrão: um contorno fechado de paredes em ordem, com
-mitra nos cantos, móveis e esquadrias por parede) e "livre" (várias salas: paredes são caixas e os vãos ficam em
-`vaos`; sem móveis ainda).
+mitra nos cantos, móveis e esquadrias por parede) e "livre" (várias salas: paredes são caixas, os vãos ficam em
+`vaos` e os móveis se apoiam numa parede e num `lado` dela).
 
 Limites desta versão: usa só o primeiro pavimento; as paredes precisam estar na ordem do contorno
-(a ordem de paredes_ids do ambiente, que o conversor de DXF já entrega); só os blocos
-balcao_2_portas, aereo_2_portas e gaveteiro_3_gavetas têm desenho; acabamentos (texturas) do JSON ainda não são aplicados
+(a ordem de paredes_ids do ambiente, que o conversor de DXF já entrega); os blocos com desenho estão em
+tools/blocos.py (balcão, aéreo, gaveteiro, roupeiro piso-teto, gabinete e rack suspensos, painel, espelho); acabamentos (texturas) do JSON ainda não são aplicados
 (as cores dos MDFs são fixas no renderizador).
 """
 import json
@@ -24,16 +24,18 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from blocos import BLOCOS, FRENTES, altura_do_movel, completar
 from validar import SCHEMA_PADRAO, checar_projeto
 
 RENDERER_DIR = Path(__file__).resolve().parent.parent / "renderer"
 # ordem importa: base define os helpers; paredes grava o contexto; comum, esquadrias e móveis o usam; vistas e validação fecham.
 MODULOS = ["sketchup_base.py", "sketchup_paredes.py", "sketchup_comum.py", "sketchup_esquadrias.py", "sketchup_moveis.py",
            "sketchup_vistas.py", "sketchup_validacao.py"]
-# topologia "livre" (vários cômodos): paredes são caixas, vãos viram verga/peitoril + esquadria; sem móveis nesta versão
+# topologia "livre" (vários cômodos): paredes são caixas, vãos viram verga/peitoril + esquadria; os móveis (se houver) entram
+# com sketchup_moveis.py antes das vistas
 MODULOS_LIVRE = ["sketchup_base.py", "sketchup_livre_ctx.py", "sketchup_comum.py", "sketchup_livre.py",
                  "sketchup_esquadrias.py", "sketchup_vistas.py", "sketchup_validacao.py"]
-BLOCOS_SUPORTADOS = {"balcao_2_portas", "aereo_2_portas", "gaveteiro_3_gavetas"}
+BLOCOS_SUPORTADOS = set(BLOCOS)
 
 
 def _dict_compacto(d):
@@ -113,15 +115,23 @@ def montar_moveis(dados):
         if m["bloco"]["id"] not in BLOCOS_SUPORTADOS:
             raise SystemExit(f"ERRO: bloco '{m['bloco']['id']}' sem desenho implementado (suportados: {sorted(BLOCOS_SUPORTADOS)})")
         apoio = m["apoio"]
-        saida.append({
+        par = completar(m["bloco"]["id"], m["parametros"])
+        if par.get("ate_o_teto"):
+            par["altura_mm"] = altura_do_movel(pav, m)          # acompanha o pé-direito
+        if "frente" in par:
+            par["frente_rgb"] = list(FRENTES[par["frente"]])
+        item = {
             "id": m["id"],
             "bloco": m["bloco"]["id"],
             "parede_id": apoio["parede_id"],
             "distancia_do_inicio_mm": apoio["distancia_do_inicio_mm"],
             "afastamento_mm": apoio.get("afastamento_mm", 0),
             "elevacao_mm": apoio.get("elevacao_mm", 0),
-            "parametros": m["parametros"],
-        })
+            "parametros": par,
+        }
+        if pav.get("topologia") == "livre":
+            item["lado"] = apoio["lado"]
+        saida.append(item)
     return saida
 
 
@@ -129,10 +139,13 @@ def gerar_script(dados):
     """Script único para o build_model do conector a partir do JSON intermediário já validado."""
     pav = dados["pavimentos"][0]
     if pav.get("topologia") == "livre":
-        if pav.get("mobiliario"):
-            raise SystemExit("ERRO: móveis ainda não são suportados na topologia livre")
+        moveis = montar_moveis(dados)
         partes = ["projeto = " + _dict_compacto(montar_dict_livre(dados)) + "\n"]
-        for nome in MODULOS_LIVRE:
+        modulos = list(MODULOS_LIVRE)
+        if moveis:
+            partes.append("moveis = [\n" + ",\n".join("  " + json.dumps(m, ensure_ascii=False) for m in moveis) + "\n]\n")
+            modulos.insert(modulos.index("sketchup_esquadrias.py") + 1, "sketchup_moveis.py")
+        for nome in modulos:
             partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
         return "\n".join(partes)
     partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n",
