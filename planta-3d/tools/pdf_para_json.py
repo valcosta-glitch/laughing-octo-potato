@@ -9,6 +9,7 @@ Escreve em --saida-dir: projeto.json, script_sketchup.py e overlay.png (peças e
 
 ajustes.json (opcional; o que a planta em PDF não traz, ou o que a pessoa/IA leu das etiquetas):
   {"pe_direito_mm": 2800,
+   "padroes": {"altura_porta_mm": 2100, "topo_janela_mm": 2100, "peitoril_janela_mm": 1000},   # = --altura-porta, --topo-janela, --peitoril-janela
    "vaos": {"5": {"tipo": "porta", "altura_mm": 2100, "peitoril_mm": 0},     # chave = número do vão no overlay
             "9": {"altura_mm": 600, "peitoril_mm": 1500},
             "12": {"remover": true}}}
@@ -92,7 +93,7 @@ def aparar_sobreposicoes(paredes, g, minimo=10.0):
 
 
 def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None, pe_direito=None, grade_mm=5.0, ajustes=None,
-                  estilo="auto", traco=None, corte=None, unidade_corte=None, tol_largura_mm=None):
+                  estilo="auto", traco=None, corte=None, unidade_corte=None, tol_largura_mm=None, padroes_cli=None):
     """Retorna (projeto, avisos, r, a): projeto = JSON intermediário; r e a = extração, para o overlay."""
     ajustes = ajustes or {}
     r = montar(pdf, escala=escala, regiao=regiao, cor_parede=cor_parede, cor_pilar=cor_pilar, estilo=estilo, traco=traco)
@@ -142,6 +143,11 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
 
     vaos, altura_inferida = [], 0
     adj = ajustes.get("vaos", {})
+    padroes = {k: v for k, v in {**ajustes.get("padroes", {}), **{k: v for k, v in (padroes_cli or {}).items() if v is not None}}.items() if v is not None}
+    if padroes:
+        avisos.append("Padrões informados: " + ", ".join(f"{k}={v:g}" for k, v in sorted(padroes.items()))
+                      + ("; peitoril da janela NÃO informado: usando o padrão de %g mm (confirmar)" % JANELA_PEITORIL
+                         if "topo_janela_mm" in padroes and "peitoril_janela_mm" not in padroes else ""))
     passagens = []
     ajustados = {}
     for n, v in enumerate(a["vaos"], 1):
@@ -155,17 +161,28 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
             centro, eixo = {"x": X((v["a0"] + v["a1"]) / 2), "y": Y(v["c"])}, "x"
         else:
             centro, eixo = {"x": X(v["c"]), "y": Y((v["a0"] + v["a1"]) / 2)}, "y"
-        alt = aj.get("altura_mm", PORTA_ALTURA if tipo == "porta" else JANELA_ALTURA)
-        peit = aj.get("peitoril_mm", 0 if tipo == "porta" else JANELA_PEITORIL)
-        inferida = "altura_mm" not in aj
-        if not inferida:
+        if tipo == "porta":
+            alt_padrao, peit_padrao, do_usuario = padroes.get("altura_porta_mm", PORTA_ALTURA), 0, "altura_porta_mm" in padroes
+        else:
+            peit_padrao = padroes.get("peitoril_janela_mm", JANELA_PEITORIL)
+            topo = padroes.get("topo_janela_mm")
+            alt_padrao = topo - peit_padrao if topo is not None else JANELA_ALTURA
+            do_usuario = topo is not None and "peitoril_janela_mm" in padroes      # janela só é "do usuário" com topo E peitoril
+            if alt_padrao <= 0:
+                raise ErroPDF(f"topo da janela ({topo:g} mm) não fica acima do peitoril ({peit_padrao:g} mm)")
+        alt = aj.get("altura_mm", alt_padrao)
+        peit = aj.get("peitoril_mm", peit_padrao)
+        inferida = "altura_mm" not in aj and not do_usuario
+        if "altura_mm" in aj:
             ajustados[f"v{n}"] = {"altura_mm": alt, "peitoril_mm": peit}
         ev = (f"{v['paralelas']} linhas paralelas na faixa da parede; batentes {v['batentes']}" if tipo == "janela"
               else f"folha de porta ({v['folhas']}), arco de giro ({v['arcos']}) e linhas de batente {v['batentes']}")
         vaos.append({"id": f"v{n}", "tipo": tipo, "eixo": eixo, "centro": centro, "largura_mm": larg,
                      "espessura_mm": esp, "altura_mm": alt, "peitoril_mm": peit,
-                     "origem": "medida" if not inferida else "inferida",
-                     "confianca": CONF_VAO if not inferida else CONF_ALTURA, "evidencia": ev})
+                     "origem": ("medida" if "altura_mm" in aj else "usuario") if not inferida else "inferida",
+                     "confianca": (CONF_VAO if "altura_mm" in aj else 1.0) if not inferida else
+                                  (0.5 if tipo == "janela" and "topo_janela_mm" in padroes else CONF_ALTURA),
+                     "evidencia": ev})
     pe_corte = None
     if corte:
         try:
@@ -191,8 +208,15 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
         if min(d["batentes"]) >= 1 and (d["a1"] - d["a0"]) * mm_px <= 1600:
             passagens.append(round((d["a1"] - d["a0"]) * mm_px))
     if altura_inferida:
-        avisos.append(f"{altura_inferida} vão(s) com altura/peitoril PADRÃO (porta {PORTA_ALTURA} mm; janela {JANELA_ALTURA} mm a {JANELA_PEITORIL} mm do piso): "
-                      "a planta baixa não traz alturas; confirme pela legenda ou pelo corte (--ajustes).")
+        por_tipo = {t: [v for v in vaos if v["origem"] == "inferida" and v["tipo"] == t] for t in ("porta", "janela")}
+        partes = []
+        if por_tipo["porta"]:
+            partes.append(f"{len(por_tipo['porta'])} porta(s) {por_tipo['porta'][0]['altura_mm']:g} mm")
+        if por_tipo["janela"]:
+            j = por_tipo["janela"][0]
+            partes.append(f"{len(por_tipo['janela'])} janela(s) de {j['altura_mm']:g} mm a {j['peitoril_mm']:g} mm do piso")
+        avisos.append(f"{altura_inferida} vão(s) com altura/peitoril PADRÃO ({'; '.join(partes)}): a planta baixa não traz alturas; "
+                      "informe --altura-porta/--topo-janela/--peitoril-janela, o corte (--corte) ou --ajustes.")
     if passagens:
         avisos.append(f"{len(passagens)} passagem(ns) com batente e sem folha (larguras {passagens} mm) ficam ABERTAS (sem parede, sem esquadria).")
     avisos.append(f"Vãos sem símbolo reconhecível (folha de porta, 3+ linhas de janela) foram tratados como espaço aberto: {len(a['descartados'])} candidato(s) descartado(s).")
@@ -245,6 +269,9 @@ def main():
     ap.add_argument("--grade-mm", type=float, default=5.0)
     ap.add_argument("--ajustes", type=Path)
     ap.add_argument("--corte", type=Path, help="DXF do corte (camadas CORTE_PISO, CORTE_TETO, CORTE_PORTAS, CORTE_JANELAS): pé-direito, altura e peitoril")
+    ap.add_argument("--altura-porta", type=float, help="altura de TODAS as portas, mm (informada por você; origem 'usuario')")
+    ap.add_argument("--topo-janela", type=float, help="altura do TOPO de todas as janelas, mm (ex.: igual ao topo das portas)")
+    ap.add_argument("--peitoril-janela", type=float, help="peitoril de todas as janelas, mm (padrão 1000)")
     ap.add_argument("--unidade-corte", choices=["mm", "cm", "m"], help="unidade do DXF do corte (padrão: a do próprio arquivo)")
     ap.add_argument("--tolerancia-largura", type=float, help="mm de diferença aceita entre vão da planta e retângulo do corte (padrão 5)")
     args = ap.parse_args()
@@ -254,7 +281,8 @@ def main():
     try:
         projeto, avisos, r, a = converter_pdf(args.pdf, args.escala, regiao, _cor(args.cor_parede) if args.cor_parede else None,
                                               _cor(args.cor_pilar) if args.cor_pilar else None, args.pe_direito, args.grade_mm, ajustes,
-                                              args.estilo, args.traco, args.corte, args.unidade_corte, args.tolerancia_largura)
+                                              args.estilo, args.traco, args.corte, args.unidade_corte, args.tolerancia_largura,
+                                              {"altura_porta_mm": args.altura_porta, "topo_janela_mm": args.topo_janela, "peitoril_janela_mm": args.peitoril_janela})
     except ErroPDF as e:
         print(f"ERRO: {e}")
         return 1

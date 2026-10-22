@@ -196,6 +196,42 @@ class TestCorte(unittest.TestCase):
         self.assertTrue(all(v["origem"] == "medida" for v in com["pavimentos"][0]["vaos"]))
 
 
+class TestPadroesDoUsuario(unittest.TestCase):
+    def _conv(self, **kw):
+        with tempfile.TemporaryDirectory() as d:
+            pdf = Path(d) / "planta.pdf"
+            ger.gerar(2, pdf)
+            return conv.converter_pdf(pdf, cor_pilar=COR_PILAR, **kw)
+
+    def test_altura_de_porta_e_topo_de_janela_alinhados(self):
+        projeto, avisos, _, _ = self._conv(padroes_cli={"altura_porta_mm": 2100, "topo_janela_mm": 2100, "peitoril_janela_mm": 1000})
+        for v in projeto["pavimentos"][0]["vaos"]:
+            if v["tipo"] == "porta":
+                self.assertEqual((v["altura_mm"], v["peitoril_mm"], v["origem"]), (2100, 0, "usuario"))
+            else:
+                self.assertEqual(v["peitoril_mm"] + v["altura_mm"], 2100)
+                self.assertEqual(v["origem"], "usuario")
+
+    def test_topo_sem_peitoril_alinha_o_topo_e_continua_inferida(self):
+        projeto, avisos, _, _ = self._conv(padroes_cli={"altura_porta_mm": 2100, "topo_janela_mm": 2100})
+        jan = [v for v in projeto["pavimentos"][0]["vaos"] if v["tipo"] == "janela"]
+        self.assertTrue(jan)
+        for v in jan:
+            self.assertEqual(v["peitoril_mm"] + v["altura_mm"], 2100)      # topo alinhado com a porta
+            self.assertEqual(v["origem"], "inferida")                      # peitoril ainda é suposição
+        self.assertTrue(any("peitoril da janela NÃO informado" in a for a in avisos), avisos)
+
+    def test_padroes_via_ajustes_e_ajuste_por_vao_vence(self):
+        projeto, _, _, _ = self._conv(ajustes={"padroes": {"altura_porta_mm": 2200}, "vaos": {"1": {"altura_mm": 2000, "peitoril_mm": 0}}})
+        vaos = projeto["pavimentos"][0]["vaos"]
+        self.assertEqual(vaos[0]["altura_mm"], 2000)
+        self.assertTrue(all(v["altura_mm"] == 2200 for v in vaos[1:] if v["tipo"] == "porta"))
+
+    def test_topo_abaixo_do_peitoril_e_recusado(self):
+        with self.assertRaises(ext.ErroPDF):
+            self._conv(padroes_cli={"topo_janela_mm": 900, "peitoril_janela_mm": 1000})
+
+
 class TestRecusas(unittest.TestCase):
     def test_modo_contorno_e_detectado_sozinho_e_avisa(self):
         _, projeto, avisos = converter(2, estilo="contorno")

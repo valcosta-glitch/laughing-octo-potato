@@ -142,6 +142,17 @@ python3 tools/pdf_para_json.py planta.pdf --saida-dir saida --cor-pilar 1,0.5,0 
 
 Etapas: (1) escolhe a cor de preenchimento cujas faixas têm 80–350 mm; (2) rasteriza só esse preenchimento numa máscara exata (0,25 pt/px) e decompõe em peças retas, com a orientação de cada pixel decidida pela maior corrida (T fica com a parede mais longa, sem sobreposição) e tampas de ponta absorvidas pela peça vizinha; (3) cola as bordas nos vértices vetoriais do desenho; (4) o vão é o **trecho livre** na faixa da parede, a partir da ponta de uma peça longa (a lacuna entre peças não serve: um T esconde parte dela); (5) **porta** = folha (retângulo fino perpendicular, ou paralelo e aberto a 90° contra a parede) com comprimento ≈ largura do vão; **janela** = 3+ linhas paralelas na faixa; vão sem símbolo = espaço aberto (não vira parede); (6) páginas giradas são lidas na orientação em que a folha é vista. Sem preenchimento de parede, o **modo contorno** descrito abaixo.
 
+### Alturas informadas por você (`--altura-porta`, `--topo-janela`, `--peitoril-janela`)
+
+Quando a pessoa que fez o projeto diz a regra (ex.: "porta 2,10 m; o topo das janelas fica alinhado com o topo das portas"), ela entra direto, sem corte:
+
+```bash
+python3 tools/pdf_para_json.py planta.pdf --escala 50 --altura-porta 2100 --topo-janela 2100 [--peitoril-janela 1000]
+#   ou no arquivo de ajustes:  {"padroes": {"altura_porta_mm": 2100, "topo_janela_mm": 2100, "peitoril_janela_mm": 1000}}
+```
+
+Portas ficam `origem: "usuario"` (confiança 1,0). Janela só vira `usuario` se você informar o topo **e** o peitoril; com só o topo, a altura é `topo − peitoril` (peitoril padrão 1000 mm), a janela continua `inferida` (confiança 0,5) e o aviso diz que o peitoril não foi informado. Ordem de precedência: ajuste por vão > corte > padrões informados > padrão do programa. Topo abaixo do peitoril é recusado. No Guarajuba: portas 2100 mm e janelas de 1000 a 2100 mm (verificado no SketchUp: topo das 7 portas do superior e das janelas = 2100).
+
 ### Altura e peitoril pelo corte (`--corte`)
 
 A planta baixa não traz pé-direito, altura de porta/janela nem peitoril; sem corte, saem valores padrão `inferida`. Com o corte em DXF 1:1 (as mesmas camadas do fluxo DXF: `CORTE_PISO` e `CORTE_TETO`, uma linha horizontal cada; `CORTE_PORTAS` e `CORTE_JANELAS`, um retângulo fechado por tipo de vão), o conversor lê o pé-direito (teto − piso) e casa cada vão da planta com um retângulo **de mesma largura** (±5 mm): altura = altura do retângulo, peitoril = base − piso, `origem: "medida"`.
