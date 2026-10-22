@@ -133,14 +133,14 @@ O erro de 10 mm é 1 pixel nessa escala. **Em 33 px/m a leitura falha em mais da
 
 ## Do PDF vetorial ao SketchUp (planta com vários cômodos)
 
-Para o PDF que sai do AutoCAD/Revit (não escaneado): as paredes estão no arquivo como polígonos, então a geometria é **lida, não estimada** — sem visão computacional sobre pixels e sem I.A. na medição. O modo de saída é o `topologia: "livre"` do esquema: cada parede é uma caixa, cada vão (`vaos`) vira verga acima da porta/janela, peitoril abaixo da janela e a esquadria. Isso aceita T, vários cômodos e porta na ponta de parede, o que o modo "contorno" (um contorno fechado) não aceita.
+Para o PDF que sai do AutoCAD/Revit (não escaneado): as paredes estão no arquivo como polígonos (cheios ou em contorno), então a geometria é **lida, não estimada** — sem visão computacional sobre pixels e sem I.A. na medição. O modo de saída é o `topologia: "livre"` do esquema: cada parede é uma caixa, cada vão (`vaos`) vira verga acima da porta/janela, peitoril abaixo da janela e a esquadria. Isso aceita T, vários cômodos e porta na ponta de parede, o que o modo "contorno" (um contorno fechado) não aceita.
 
 ```bash
 python3 tools/pdf_para_json.py planta.pdf --saida-dir saida --cor-pilar 1,0.5,0     # --escala 50 se o PDF não trouxer "1:50" no texto
 #   saida/projeto.json  saida/script_sketchup.py (colar em build_model, clean=true)  saida/overlay.png (CONFIRA)
 ```
 
-Etapas: (1) escolhe a cor de preenchimento cujas faixas têm 80–350 mm; (2) rasteriza só esse preenchimento numa máscara exata (0,25 pt/px) e decompõe em peças retas, com a orientação de cada pixel decidida pela maior corrida (T fica com a parede mais longa, sem sobreposição) e tampas de ponta absorvidas pela peça vizinha; (3) cola as bordas nos vértices vetoriais do desenho; (4) o vão é o **trecho livre** na faixa da parede, a partir da ponta de uma peça longa (a lacuna entre peças não serve: um T esconde parte dela); (5) **porta** = folha (retângulo fino perpendicular, ou paralelo e aberto a 90° contra a parede) com comprimento ≈ largura do vão; **janela** = 3+ linhas paralelas na faixa; vão sem símbolo = espaço aberto (não vira parede); (6) páginas giradas são lidas na orientação em que a folha é vista.
+Etapas: (1) escolhe a cor de preenchimento cujas faixas têm 80–350 mm; (2) rasteriza só esse preenchimento numa máscara exata (0,25 pt/px) e decompõe em peças retas, com a orientação de cada pixel decidida pela maior corrida (T fica com a parede mais longa, sem sobreposição) e tampas de ponta absorvidas pela peça vizinha; (3) cola as bordas nos vértices vetoriais do desenho; (4) o vão é o **trecho livre** na faixa da parede, a partir da ponta de uma peça longa (a lacuna entre peças não serve: um T esconde parte dela); (5) **porta** = folha (retângulo fino perpendicular, ou paralelo e aberto a 90° contra a parede) com comprimento ≈ largura do vão; **janela** = 3+ linhas paralelas na faixa; vão sem símbolo = espaço aberto (não vira parede); (6) páginas giradas são lidas na orientação em que a folha é vista. Sem preenchimento de parede, o **modo contorno** descrito abaixo.
 
 ### Teste com uma planta real (casa de 3 quartos, 1:50, A4)
 
@@ -159,11 +159,32 @@ Erro médio 3,3 mm; o maior (+15) vem do próprio desenho (paredes de 155–159 
 
 **Não vem da planta (valores padrão, marcados `inferida` com confiança 0,3 e avisados):** pé-direito 2700 mm; altura da porta 2100 mm (bate com as etiquetas "x2.10", mas foi suposta); janelas 1200 mm de altura a 1000 mm do piso. Informe pelo corte ou por `--ajustes ajustes.json`. O piso é uma laje retangular sob a caixa envolvente.
 
-**Onde falha (testado, com a segunda planta real).** Um layout de interiores em **linha dupla sem preenchimento** — contornos de ambiente, dois pavimentos na mesma folha, escada, curvas, folha girada 270° — **não é suportado**: o extrator recusa com erro claro (`nenhum preenchimento parece parede ... linha dupla`). Um experimento de pareamento de linhas paralelas recuperou só um esqueleto parcial (perímetro e algumas divisórias) misturado com contornos de escada e mobiliário e o muro do terreno: não sustenta um modelo fiel, então não foi ligado ao pipeline. Para suportá-lo faltam, no mínimo: pareamento de faces com hachura, recorte por pavimento (`--regiao`), exclusão de escada/mobiliário e uma conferência humana/IA do overlay. Nessa planta as paredes internas nem têm espessura desenhada (são contornos de área útil).
+### Teste com a segunda planta real (layout de interiores, 2 pavimentos, 1:50, A3 girada 270°)
 
-**Outros limites.** Só paredes ortogonais; sem móveis no modo livre; vão sem folha/linhas reconhecíveis é tratado como aberto (a "passagem" com batente e sem folha aparece como aviso, sem esquadria); uma porta de correr ou de vidro sem folha desenhada seria perdida; a escolha automática da cor das paredes pode errar com escala errada (use `--cor-parede`).
+Aqui as paredes **não têm preenchimento**: cada parede é a região entre duas polilinhas aninhadas (face externa e interna, traço de 1,08 pt). O **modo contorno** (`--estilo contorno`, automático quando nenhuma cor de preenchimento parece parede) preenche cada polilinha como polígono e fica com a **paridade** (par/ímpar): o anel entre os contornos sobra, e as interrupções dos contornos são os vãos. Os fios diagonais que o fechamento implícito de polilinhas abertas deixa são removidos por espessura. A folha tem dois pavimentos: cada um sai com `--regiao` (em pontos, na orientação em que a folha é vista).
 
-**Testes** (`tests/test_pdf.py`, PDFs sintéticos com gabarito, 8 sementes, com giro 90/180/270): centros e larguras dos vãos ≤ 10 mm, extensão da planta ≤ 10 mm, tipos certos; mutações (regra de janela quebrada, 1% de erro na escala) são detectadas. Os PDFs reais não estão no repositório.
+```bash
+python3 tools/pdf_para_json.py layout.pdf --escala 50 --regiao 30,250,420,1040  --saida-dir terreo      # pavimento térreo
+python3 tools/pdf_para_json.py layout.pdf --escala 50 --regiao 440,250,820,1040 --saida-dir superior    # pavimento superior
+```
+
+Cotas impressas do térreo conferidas com o modelo (as cotas "2.53", "3.03", "3.08" são larguras de cômodo, não de janela):
+
+| Cota impressa | Modelo | Erro |
+|---|---|---|
+| Garden (largura) 5,76 m | 5750 mm | −10 |
+| Garden (profundidade) 2,50 m | 2500 mm | 0 |
+| Cozinha/serviço 2,51 m | 2505 mm | −5 |
+| Suíte 04 (profundidade) 3,63 m | 3625 mm | −5 |
+| Depósito 1,41 m | 1405 mm | −5 |
+
+Paredes: espessuras 190 mm (externas), 130 mm (divisórias) e 240 mm (parede hachurada), lidas do desenho. Fechado no SketchUp: térreo 43 peças-folha e superior 50, todas sólidos fechados, 0 problemas.
+
+**Os vãos neste estilo são candidatos, não resultado.** Regras que funcionaram aqui: arco de giro ⇒ porta (e, quando o desenho usa arcos, folha sem arco deixa de bastar: sem isso a escada e a cozinha geravam 6 portas falsas); janela = 3+ linhas paralelas, ou 2 linhas com batente nas duas pontas. Resultado conferido no `overlay.png`: térreo 6 vãos (2 janelas, 4 portas), superior 10 (3 janelas, 7 portas), dos quais **1 era falso** (uma "janela" de 2,53 m que um humano removeu com `--ajustes '{"vaos": {"9": {"remover": true}}}'`). **Não entram**: as portas de vidro de correr da sala (3,03 m) e da suíte máster (3,08 m), que não têm faixa de parede no desenho, e a escada (as paredes ao redor dela entram como parede, mas a escada não é modelada). Os muros do garden e a parede do terreno entram como paredes de 2,70 m de altura: confira o overlay e use `--ajustes` ou `--regiao`.
+
+**Outros limites.** Só paredes ortogonais; sem móveis no modo livre; escada, curvas, varanda e hachura não são modeladas; vão sem folha/linhas reconhecíveis é tratado como aberto (a "passagem" com batente e sem folha aparece como aviso, sem esquadria); uma porta de correr ou de vidro sem folha desenhada seria perdida; a escolha automática da cor das paredes pode errar com escala errada (use `--cor-parede`).
+
+**Testes** (`tests/test_pdf.py`, PDFs sintéticos com gabarito, 8 sementes, com giro 90/180/270): centros e larguras dos vãos ≤ 10 mm, extensão da planta ≤ 10 mm, tipos certos; os dois estilos (preenchido e contorno) são testados; um terceiro, linhas soltas sem polígono, tem de ser recusado com erro claro; mutações (regra de janela quebrada, 1% de erro na escala) são detectadas. Os PDFs reais não estão no repositório.
 
 ## Converter um DXF (só até o JSON)
 
@@ -212,7 +233,7 @@ Limites: usa só o primeiro pavimento; só os três blocos acima têm desenho; a
 ## Limitações conhecidas (versão 0.1.0)
 
 - O conversor aceita um único contorno fechado. Móveis só encostados numa parede e alinhados a ela (sem canto em L de móveis, ilhas nem móveis girados). Várias peças e T só existem pelo caminho PDF vetorial (topologia livre, sem móveis); paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
-- Imagem: ver a seção própria (só paredes ortogonais, um contorno, sem móveis). PDF vetorial: ver a seção própria (vários cômodos sim; linha dupla não).
+- Imagem: ver a seção própria (só paredes ortogonais, um contorno, sem móveis). PDF vetorial: ver a seção própria (vários cômodos, paredes cheias ou em contornos aninhados; linhas soltas sem polígono não).
 - Polilinhas com arco são recusadas. Blocos (`INSERT`) de porta/janela e cotas escritas (OCR) não são lidos.
 
 - Só paredes retas; paredes curvas não estão previstas.

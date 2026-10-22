@@ -158,11 +158,12 @@ leitura = []
 for s in cenas:
     c = s.get_camera()
     o = c.get_orientation()
+    h_ort = c.get_orthographic_frustum_height()   # None em cena em perspectiva
     leitura.append({
         "cena": s.get_name(),
         "olho": [round(o[0].x, 1), round(o[0].y, 1), round(o[0].z, 1)],
         "perspectiva": c.is_perspective(),
-        "altura_ortho": round(c.get_orthographic_frustum_height(), 1),
+        "altura_ortho": round(h_ort, 1) if h_ort is not None else None,
         "usa_camera": s.get_use_camera(),
     })
 mc = model.get_camera()
