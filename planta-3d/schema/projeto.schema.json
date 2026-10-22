@@ -610,12 +610,32 @@
             },
             "alvo_id": {
               "$ref": "#/$defs/id"
+            },
+            "alvo": {
+              "description": "O que o comando altera.",
+              "enum": [
+                "vao",
+                "parede",
+                "pavimento"
+              ]
+            },
+            "parametros": {
+              "description": "Valores do comando, em mm (ver tools/ajustes.py).",
+              "type": "object"
+            },
+            "inverso": {
+              "description": "Comando que desfaz este (gerado ao aplicar).",
+              "type": "object"
             }
           }
         },
         "aplicado": {
           "type": "boolean",
           "default": false
+        },
+        "grupo": {
+          "description": "Ajustes de uma mesma frase digitada compartilham o grupo; desfazer desfaz o grupo inteiro.",
+          "type": "string"
         }
       }
     },

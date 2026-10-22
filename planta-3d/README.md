@@ -12,6 +12,7 @@ tools/validar.py               valida esquema + coerência geométrica
 tools/planta_para_skp.py       DA PLANTA DXF AO SCRIPT DO SKETCHUP, num comando (começa por aqui)
 tools/pdf_extrair.py           PDF VETORIAL (AutoCAD plotado) -> paredes, pilares e vãos, com porta x janela pelos vetores
 tools/pdf_para_json.py         PDF vetorial -> JSON intermediário (topologia livre) + script do SketchUp + overlay.png
+tools/ajustes.py               AJUSTES DIGITADOS: frase em português -> comandos estruturados -> projeto, com histórico e desfazer
 tools/pdf_gerar_teste.py       gera PDFs vetoriais sintéticos (com e sem giro de página) e gabarito
 tools/imagem_extrair.py        IMAGEM da planta -> paredes e vãos em pixels (visão computacional clássica)
 tools/imagem_classificar_claude.py  etapa de I.A.: classifica os vãos e lê a escala (API NÃO executada)
@@ -213,6 +214,38 @@ Paredes: espessuras 190 mm (externas), 130 mm (divisórias) e 240 mm (parede hac
 **Outros limites.** Só paredes ortogonais; sem móveis no modo livre; escada, curvas, varanda e hachura não são modeladas; vão sem folha/linhas reconhecíveis é tratado como aberto (a "passagem" com batente e sem folha aparece como aviso, sem esquadria); uma porta de correr ou de vidro sem folha desenhada seria perdida; a escolha automática da cor das paredes pode errar com escala errada (use `--cor-parede`).
 
 **Testes** (`tests/test_pdf.py`, PDFs sintéticos com gabarito, 8 sementes, com giro 90/180/270): centros e larguras dos vãos ≤ 10 mm, extensão da planta ≤ 10 mm, tipos certos; os dois estilos (preenchido e contorno) são testados; um terceiro, linhas soltas sem polígono, tem de ser recusado com erro claro; mutações (regra de janela quebrada, 1% de erro na escala) são detectadas. Os PDFs reais não estão no repositório.
+
+## Ajustes digitados (`tools/ajustes.py`)
+
+O cliente corrige o que a leitura automática errou **digitando frases**, sem arquivo de configuração e sem mexer em código:
+
+```bash
+python3 tools/ajustes.py projeto.json "remover vão 9" "pé-direito 2,62 m" "todas as janelas: peitoril 1 m, topo 2,10 m" --saida projeto2.json --script script_sketchup.py
+python3 tools/ajustes.py projeto2.json --desfazer --saida projeto3.json      # desfaz a última frase
+python3 tools/ajustes.py projeto2.json --historico
+```
+
+| Frase (exemplos) | O que faz |
+|---|---|
+| `remover vão 9` · `remover janela 3` · `apagar a porta v4` | tira o vão (verga, peitoril e esquadria) e **deixa o espaço aberto** |
+| `fechar vão 9` | troca o vão por um trecho de parede |
+| `janela 3: peitoril 1,10 m` · `altura da porta 2 para 2,20 m` · `topo da janela 3 2,10 m` · `largura do vão 5: 0,90 m` | altera um vão (a largura é centrada) |
+| `transformar vão 4 em janela, peitoril 1 m, altura 1,1 m` · `transformar a janela 3 em porta` | troca o tipo (janela exige peitoril e altura; porta mantém o topo) |
+| `mover janela 3 20 cm para leste` | desloca o vão **ao longo da parede** (norte = +Y, sul = −Y, leste = +X, oeste = −X) |
+| `todas as janelas: peitoril 1 m, topo 2,10 m` · `todas as portas: altura 2,10 m` | em lote |
+| `pé-direito 2,60 m` | pé-direito do pavimento |
+| `parede p5 espessura 15 cm` · `remover parede p5` · `mover parede p5 10 cm para o norte` | paredes (mover leva os vãos da parede junto, e avisa que as junções não são esticadas) |
+| `adicionar janela de 1,20 m na parede p5 a 2 m do início, peitoril 1 m, altura 1,1 m` | divide a parede em duas peças e abre o vão (início = ponta de menor coordenada) |
+
+Regras de projeto, todas testadas:
+- **Nunca código livre.** A frase vira **comandos estruturados** (`acao`, `alvo`, `alvo_id`, `parametros`, em mm), que o programa valida e executa. A tradução frase → comando é por regras e **offline**; uma camada de I.A. pode, no futuro, traduzir frase livre para essas mesmas frases/comandos sem mudar o resto.
+- **Nunca adivinha.** Frase que não casa, número sem unidade ambíguo (`peitoril 90`: cm ou m?), vão inexistente, tipo que não confere (`janela 9` quando v9 é porta), direção impossível (mover para o norte um vão numa parede que corre em Y) ou porta com peitoril ≠ 0 dão **erro explicado** e nada muda.
+- **Atômico.** Um lote só é aplicado se todas as frases forem válidas **e** o projeto resultante passar no esquema e na validação geométrica (ex.: `pé-direito 2 m` com porta de 2,10 m é recusado). Frase redundante (o projeto já está assim) vira aviso e o resto do lote segue; dizer o valor de um vão que estava `inferida` o confirma (`usuario`, confiança 1,0).
+- **Auditável e reversível.** Cada frase é um grupo no `historico_ajustes` (texto original, comando e **comando inverso**); `--desfazer` restaura o estado **exato** anterior, inclusive origem, confiança e evidência.
+
+**Prova com a planta real (Guarajuba, superior).** As correções que eu tinha feito à mão e por arquivo (remover a janela falsa, pé-direito, altura de porta e janela) foram refeitas **só com 4 frases** a partir da extração bruta (valores padrão): geometria, origem e confiança ficaram **idênticas** ao modelo já salvo no SketchUp.
+
+**Limites:** só frases nas formas acima (frase livre ainda não); no modo "contorno" (DXF) valem só as frases de vão (remover, altura/peitoril, tipo em lote, pé-direito); adicionar parede por frase não existe (só pelo comando estruturado); mover parede não ajusta as paredes vizinhas; móveis ainda não têm ajustes.
 
 ## Converter um DXF (só até o JSON)
 

@@ -81,6 +81,13 @@ def checar_livre(pav, erros, avisos):
             if dx > 20 and dy > 20:
                 avisos.append(f"paredes '{caixas[i][0]}' e '{caixas[j][0]}' se sobrepõem em {dx:.0f} x {dy:.0f} mm (faces coplanares no topo)")
     for v in pav.get("vaos", []):
+        c, w, e = v["centro"], v["largura_mm"], v["espessura_mm"]
+        ret = (c["x"] - w / 2, c["x"] + w / 2, c["y"] - e / 2, c["y"] + e / 2) if v["eixo"] == "x" else \
+              (c["x"] - e / 2, c["x"] + e / 2, c["y"] - w / 2, c["y"] + w / 2)
+        for pid, bx0, bx1, by0, by1 in caixas:
+            dx, dy = min(ret[1], bx1) - max(ret[0], bx0), min(ret[3], by1) - max(ret[2], by0)
+            if dx > 20 and dy > 20:
+                avisos.append(f"vão '{v['id']}' se sobrepõe à parede '{pid}' em {dx:.0f} x {dy:.0f} mm")
         if v.get("peitoril_mm", 0) + v["altura_mm"] > pav["pe_direito_mm"]:
             erros.append(f"vão '{v['id']}': ultrapassa o pé-direito")
         if v["tipo"] == "porta" and v.get("peitoril_mm", 0) != 0:
