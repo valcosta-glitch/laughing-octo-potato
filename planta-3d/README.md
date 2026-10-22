@@ -11,8 +11,12 @@ tools/validar.py               valida esquema + coerência geométrica
 tools/dxf_para_json.py         converte uma planta DXF simples neste JSON
 tools/gerar_dxf_exemplo.py     gera exemplos/cozinha-planta.dxf
 tools/gerar_script_sketchup.py JSON -> script para o conector Trimble SketchUp
-renderer/sketchup_paredes.py   desenha paredes com portas/janelas (roda no sandbox do conector)
+renderer/sketchup_paredes.py   paredes com vãos de porta/janela (roda no sandbox do conector)
+renderer/sketchup_comum.py     funções compartilhadas (extrusão, prisma, validação de sólidos)
+renderer/sketchup_esquadrias.py piso, porta (batente + folha), janela (caixilho + vidro)
+renderer/sketchup_moveis.py    balcão e aéreo de 2 portas, peça a peça, com lista de corte
 renderer/sketchup_vistas.py    estilo técnico + 5 cenas ortográficas + câmera de abertura
+renderer/sketchup_validacao.py confere que toda peça-folha é um sólido fechado
 tests/                         testes do conversor
 requirements.txt               ezdxf, jsonschema
 ```
@@ -71,16 +75,20 @@ O que **não** vem do desenho sai marcado `origem: "inferida"` com confiança 0,
 O conector executa **Python** num sandbox (sem `import`, sem arquivos, unidade em polegadas), então o JSON é embutido no script:
 
 ```bash
-python3 tools/gerar_script_sketchup.py exemplos/cozinha-simples.json script.py   # valida e monta
+python3 tools/gerar_script_sketchup.py exemplos/cozinha-simples.json script.py   # valida e monta tudo
 ```
 
-1. Cole `script.py` em `build_model` (com `clean: true`). Resultado esperado para a cozinha: 4 grupos `Parede_*`, cada um sólido fechado, sem bordas abertas.
-2. Cole `renderer/sketchup_vistas.py` em outro `build_model`: aplica o estilo e cria as cenas Planta, Frontal, Fundos, Lateral esquerda e Lateral direita.
+1. Cole `script.py` em `build_model` com `clean: true`. Ele desenha paredes, piso, porta, janela, móveis, cria as cinco cenas e termina com a validação.
+2. Resultado esperado para a cozinha de exemplo: `pecas_verificadas: 24`, `pecas_com_problema: []`, cinco cenas e a `lista_de_corte` dos móveis (15 chapas).
 3. `save_model` devolve o `.skp`.
 
-Testado no conector com a cozinha de exemplo (as paredes e as vistas rodaram sem erro; volumes conferidos à mão para a parede norte). **Não** foi conferido visualmente: o ambiente bloqueia o download da miniatura, então abra o `.skp` e confira.
+O que é desenhado: paredes com cantos em esquadria; piso (laje de 100 mm); porta com batente e folha **fechada**; janela com caixilho e vidro; balcão e aéreo de 2 portas, uma chapa por subgrupo.
 
-Limites: usa só o primeiro pavimento; mobiliário e acabamentos do JSON ainda não são desenhados; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`).
+**Medidas que o renderizador assume (não vêm do JSON, confira):** batente 40 mm, caixilho 40 mm, folha 35 mm, vidro 6 mm, piso 100 mm, fundo dos móveis 6 mm, zócalo recuado 50 mm, folga de porta 3 mm, tampo do balcão na mesma chapa do corpo (com 20 mm de avanço). Cores dos MDFs são fixas (as texturas do JSON ainda não são aplicadas).
+
+Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos fechados e as posições conferem com o JSON. **Não** foi conferido visualmente (o ambiente bloqueia o download da miniatura): abra o `.skp` e confira.
+
+Limites: usa só o primeiro pavimento; só os blocos `balcao_2_portas` e `aereo_2_portas` têm desenho; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`); sem ferragens, puxadores, prateleiras nem furação.
 
 ## Limitações conhecidas (versão 0.1.0)
 

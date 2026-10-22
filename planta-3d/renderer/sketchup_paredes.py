@@ -171,6 +171,7 @@ n = len(paredes)
 abs_por_parede = {}
 for a in projeto["aberturas"]:
     abs_por_parede.setdefault(a["parede_id"], []).append({
+        "id": a["id"],
         "tipo": a["tipo"],
         "s0": a["posicao_mm"] * MM,
         "s1": (a["posicao_mm"] + a["largura_mm"]) * MM,
@@ -233,3 +234,10 @@ for g in projeto_grp.get_entities().get_groups():
     rel.append({"nome": g.get_name(), "faces": len(ents.get_faces()), "volume_in3": g.compute_volume(),
                 "bordas_abertas": bordas, "soltas": soltas, "orient_consistente": orient_ok(g)})
 result = {"paredes": rel}
+
+# contexto para as etapas seguintes (esquadrias, móveis), que rodam em chamadas separadas
+session_state["ctx"] = {
+    "MM": MM, "nome": projeto.get("nome", "Projeto"), "pe_direito": projeto["pe_direito_mm"],
+    "paredes": paredes, "abs": abs_por_parede, "cantos_in": cantos_in, "cantos_out": cantos_out,
+    "orient": orient, "to_geometry": to_geometry, "get_or_create_material": get_or_create_material,
+}

@@ -3,12 +3,16 @@
 
 Uso: python3 gerar_script_sketchup.py projeto.json [saida.py]
 
-Lê o JSON intermediário (schema 0.1.0), valida, e escreve `projeto = {...}` (em mm) seguido do
-renderizador renderer/sketchup_paredes.py. Sem saída informada, imprime no stdout.
+Lê o JSON intermediário (schema 0.1.0), valida, e escreve `projeto = {...}` e `moveis = [...]` (em mm)
+seguidos dos módulos de renderer/. Sem saída informada, imprime no stdout.
+
+Gera um script único (paredes, piso/porta/janela, móveis, cinco vistas e validação final) para um
+build_model com clean=true.
 
 Limites desta versão: usa só o primeiro pavimento; as paredes precisam estar na ordem do contorno
-(a ordem de paredes_ids do ambiente, que o conversor de DXF já entrega); mobiliário e acabamentos
-ainda não são desenhados.
+(a ordem de paredes_ids do ambiente, que o conversor de DXF já entrega); só os blocos
+balcao_2_portas e aereo_2_portas têm desenho; acabamentos (texturas) do JSON ainda não são aplicados
+(as cores dos MDFs são fixas no renderizador).
 """
 import json
 import sys
@@ -18,7 +22,11 @@ from jsonschema import Draft202012Validator
 
 from validar import SCHEMA_PADRAO, checar_projeto
 
-RENDERER = Path(__file__).resolve().parent.parent / "renderer" / "sketchup_paredes.py"
+RENDERER_DIR = Path(__file__).resolve().parent.parent / "renderer"
+# ordem importa: paredes grava o contexto; comum, esquadrias e móveis o usam; vistas e validação fecham.
+MODULOS = ["sketchup_paredes.py", "sketchup_comum.py", "sketchup_esquadrias.py", "sketchup_moveis.py",
+           "sketchup_vistas.py", "sketchup_validacao.py"]
+BLOCOS_SUPORTADOS = {"balcao_2_portas", "aereo_2_portas"}
 
 
 def montar_dict(dados):
@@ -55,6 +63,25 @@ def montar_dict(dados):
     }
 
 
+def montar_moveis(dados):
+    pav = dados["pavimentos"][0]
+    saida = []
+    for m in pav.get("mobiliario", []):
+        if m["bloco"]["id"] not in BLOCOS_SUPORTADOS:
+            raise SystemExit(f"ERRO: bloco '{m['bloco']['id']}' sem desenho implementado (suportados: {sorted(BLOCOS_SUPORTADOS)})")
+        apoio = m["apoio"]
+        saida.append({
+            "id": m["id"],
+            "bloco": m["bloco"]["id"],
+            "parede_id": apoio["parede_id"],
+            "distancia_do_inicio_mm": apoio["distancia_do_inicio_mm"],
+            "afastamento_mm": apoio.get("afastamento_mm", 0),
+            "elevacao_mm": apoio.get("elevacao_mm", 0),
+            "parametros": m["parametros"],
+        })
+    return saida
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -69,8 +96,11 @@ def main():
             print(f"ERRO: {p}", file=sys.stderr)
         return 1
 
-    script = "projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n\n"
-    script += RENDERER.read_text(encoding="utf-8")
+    partes = ["projeto = " + json.dumps(montar_dict(dados), ensure_ascii=False, indent=4) + "\n",
+              "moveis = " + json.dumps(montar_moveis(dados), ensure_ascii=False, indent=4) + "\n"]
+    for nome in MODULOS:
+        partes.append("# " + "=" * 20 + " " + nome + " " + "=" * 20 + "\n" + (RENDERER_DIR / nome).read_text(encoding="utf-8"))
+    script = "\n".join(partes)
     if len(sys.argv) > 2:
         Path(sys.argv[2]).write_text(script, encoding="utf-8")
         print(f"OK: {sys.argv[2]} ({len(script)} caracteres)")
