@@ -6,7 +6,7 @@ Esquema do JSON que fica entre a **leitura da planta/corte** (DXF ou IA) e o **r
 
 ```
 schema/projeto.schema.json     esquema (JSON Schema 2020-12)
-exemplos/cozinha-simples.json  cozinha 4,00 x 3,00 m com porta, janela, balcão e aéreo
+exemplos/cozinha-simples.json  cozinha 4,00 x 3,00 m com porta, janela, balcão, gaveteiro e aéreo
 tools/validar.py               valida esquema + coerência geométrica
 tools/dxf_para_json.py         converte uma planta DXF simples neste JSON
 tools/gerar_dxf_exemplo.py     gera exemplos/cozinha-planta.dxf
@@ -14,7 +14,7 @@ tools/gerar_script_sketchup.py JSON -> script para o conector Trimble SketchUp
 renderer/sketchup_paredes.py   paredes com vãos de porta/janela (roda no sandbox do conector)
 renderer/sketchup_comum.py     funções compartilhadas (extrusão, prisma, validação de sólidos)
 renderer/sketchup_esquadrias.py piso, porta (batente + folha), janela (caixilho + vidro)
-renderer/sketchup_moveis.py    balcão e aéreo de 2 portas, peça a peça, com lista de corte
+renderer/sketchup_moveis.py    balcão, aéreo e gaveteiro, peça a peça, com lista de corte
 renderer/sketchup_vistas.py    estilo técnico + 5 cenas ortográficas + cena Interior de cima (perspectiva)
 renderer/sketchup_validacao.py confere que toda peça-folha é um sólido fechado
 tests/                         testes do conversor
@@ -79,10 +79,10 @@ python3 tools/gerar_script_sketchup.py exemplos/cozinha-simples.json script.py  
 ```
 
 1. Cole `script.py` em `build_model` com `clean: true`. Ele desenha paredes, piso, porta, janela, móveis, cria as seis cenas e termina com a validação.
-2. Resultado esperado para a cozinha de exemplo: `pecas_verificadas: 24`, `pecas_com_problema: []`, seis cenas e a `lista_de_corte` dos móveis (15 chapas).
+2. Resultado esperado para a cozinha de exemplo: `pecas_verificadas: 48`, `pecas_com_problema: []`, seis cenas e `pecas_por_movel` (balcão 8, gaveteiro 24, aéreo 7 = 39 chapas na lista de corte).
 3. `save_model` devolve o `.skp`.
 
-O que é desenhado: paredes com cantos em esquadria; piso (laje de 100 mm); porta com batente e folha **fechada**; janela com caixilho e vidro; balcão e aéreo de 2 portas, uma chapa por subgrupo.
+O que é desenhado: paredes com cantos em esquadria; piso (laje de 100 mm); porta com batente e folha **fechada**; janela com caixilho e vidro; balcão e aéreo de 2 portas e gaveteiro de 3 gavetas, uma chapa por subgrupo.
 
 **Medidas que o renderizador assume (não vêm do JSON, confira):** batente 40 mm, caixilho 40 mm, folha 35 mm, vidro 6 mm, piso 100 mm, fundo dos móveis 6 mm, zócalo recuado 50 mm, folga de porta 3 mm, tampo do balcão na mesma chapa do corpo (com 20 mm de avanço). Cores dos MDFs são fixas (as texturas do JSON ainda não são aplicadas).
 
@@ -90,7 +90,9 @@ Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos
 
 Cenas: Planta, Frontal, Fundos, Lateral esquerda, Lateral direita (ortográficas) e **Interior de cima** (perspectiva a 40° de altura e 10° de azimute, olhando para dentro). Essa cena **oculta a parede da frente e a porta** dela, por meio da etiqueta `Parede_da_frente`; as outras cenas gravam a etiqueta visível. A parede da frente é a que fica entre a câmera e o ambiente. O arquivo abre em "Interior de cima".
 
-Limites: usa só o primeiro pavimento; só os blocos `balcao_2_portas` e `aereo_2_portas` têm desenho; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`); sem ferragens, puxadores, prateleiras nem furação.
+**Blocos da biblioteca (catálogo `demo`):** `balcao_2_portas`, `aereo_2_portas` e `gaveteiro_3_gavetas`. O gaveteiro usa o parâmetro `gavetas` (o nome do bloco diz 3, mas o desenho aceita 2 a 4; testado sem sobreposição). Cada gaveta: frente de 18 mm + caixa (duas laterais, traseira e frente interna de 15 mm, fundo de 6 mm), folga de 13 mm de cada lado para a corrediça e comprimento da caixa em múltiplos de 50 mm, até 550. Sem corrediças, puxadores nem furação desenhados.
+
+Limites: usa só o primeiro pavimento; só os três blocos acima têm desenho; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`); sem ferragens, puxadores, prateleiras nem furação.
 
 ## Limitações conhecidas (versão 0.1.0)
 

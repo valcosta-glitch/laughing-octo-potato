@@ -4,8 +4,14 @@
     "nome": "Cozinha simples (exemplo)",
     "unidade": "mm",
     "calibracao": {
-      "ponto_a": { "x": 0, "y": 0 },
-      "ponto_b": { "x": 4000, "y": 0 },
+      "ponto_a": {
+        "x": 0,
+        "y": 0
+      },
+      "ponto_b": {
+        "x": 4000,
+        "y": 0
+      },
       "medida_mm": 4000,
       "origem": "usuario"
     },
@@ -26,8 +32,14 @@
       "paredes": [
         {
           "id": "p_sul",
-          "inicio": { "x": 0, "y": 0 },
-          "fim": { "x": 4000, "y": 0 },
+          "inicio": {
+            "x": 0,
+            "y": 0
+          },
+          "fim": {
+            "x": 4000,
+            "y": 0
+          },
           "espessura_mm": 150,
           "eixo": "centro",
           "origem": "medida",
@@ -35,8 +47,14 @@
         },
         {
           "id": "p_leste",
-          "inicio": { "x": 4000, "y": 0 },
-          "fim": { "x": 4000, "y": 3000 },
+          "inicio": {
+            "x": 4000,
+            "y": 0
+          },
+          "fim": {
+            "x": 4000,
+            "y": 3000
+          },
           "espessura_mm": 150,
           "eixo": "centro",
           "origem": "medida",
@@ -44,8 +62,14 @@
         },
         {
           "id": "p_norte",
-          "inicio": { "x": 4000, "y": 3000 },
-          "fim": { "x": 0, "y": 3000 },
+          "inicio": {
+            "x": 4000,
+            "y": 3000
+          },
+          "fim": {
+            "x": 0,
+            "y": 3000
+          },
           "espessura_mm": 150,
           "eixo": "centro",
           "origem": "medida",
@@ -53,8 +77,14 @@
         },
         {
           "id": "p_oeste",
-          "inicio": { "x": 0, "y": 3000 },
-          "fim": { "x": 0, "y": 0 },
+          "inicio": {
+            "x": 0,
+            "y": 3000
+          },
+          "fim": {
+            "x": 0,
+            "y": 0
+          },
           "espessura_mm": 150,
           "eixo": "centro",
           "origem": "medida",
@@ -91,14 +121,23 @@
         {
           "id": "cozinha",
           "nome": "Cozinha",
-          "paredes_ids": ["p_sul", "p_leste", "p_norte", "p_oeste"],
+          "paredes_ids": [
+            "p_sul",
+            "p_leste",
+            "p_norte",
+            "p_oeste"
+          ],
           "area_declarada_m2": 10.97
         }
       ],
       "mobiliario": [
         {
           "id": "balcao_pia",
-          "bloco": { "catalogo": "demo", "id": "balcao_2_portas", "versao": 1 },
+          "bloco": {
+            "catalogo": "demo",
+            "id": "balcao_2_portas",
+            "versao": 1
+          },
           "ambiente_id": "cozinha",
           "apoio": {
             "parede_id": "p_norte",
@@ -116,8 +155,35 @@
           }
         },
         {
+          "id": "gaveteiro_pia",
+          "bloco": {
+            "catalogo": "demo",
+            "id": "gaveteiro_3_gavetas",
+            "versao": 1
+          },
+          "ambiente_id": "cozinha",
+          "apoio": {
+            "parede_id": "p_norte",
+            "distancia_do_inicio_mm": 1800,
+            "afastamento_mm": 0,
+            "elevacao_mm": 0
+          },
+          "parametros": {
+            "largura_mm": 600,
+            "altura_mm": 870,
+            "profundidade_mm": 600,
+            "gavetas": 3,
+            "espessura_chapa_mm": 18,
+            "socalo_mm": 100
+          }
+        },
+        {
           "id": "aereo_pia",
-          "bloco": { "catalogo": "demo", "id": "aereo_2_portas", "versao": 1 },
+          "bloco": {
+            "catalogo": "demo",
+            "id": "aereo_2_portas",
+            "versao": 1
+          },
           "ambiente_id": "cozinha",
           "apoio": {
             "parede_id": "p_norte",
@@ -137,8 +203,16 @@
       "acabamentos": [
         {
           "id": "acab_balcao_portas",
-          "alvo": { "tipo": "movel_peca", "id": "balcao_pia", "peca": "porta" },
-          "textura": { "catalogo": "demo", "id": "mdf_verde", "versao": 1 },
+          "alvo": {
+            "tipo": "movel_peca",
+            "id": "balcao_pia",
+            "peca": "porta"
+          },
+          "textura": {
+            "catalogo": "demo",
+            "id": "mdf_verde",
+            "versao": 1
+          },
           "escala_amostra_mm": 2750,
           "rotacao_veio_graus": 90
         }
@@ -146,11 +220,41 @@
     }
   ],
   "vistas": [
-    { "id": "v_planta", "tipo": "planta", "pavimento_id": "terreo", "escala": "1:50", "formato": "png" },
-    { "id": "v_frontal", "tipo": "frontal", "pavimento_id": "terreo", "escala": "1:50", "formato": "png" },
-    { "id": "v_fundos", "tipo": "fundos", "pavimento_id": "terreo", "escala": "1:50", "formato": "png" },
-    { "id": "v_esquerda", "tipo": "lateral_esquerda", "pavimento_id": "terreo", "escala": "1:50", "formato": "png" },
-    { "id": "v_direita", "tipo": "lateral_direita", "pavimento_id": "terreo", "escala": "1:50", "formato": "png" }
+    {
+      "id": "v_planta",
+      "tipo": "planta",
+      "pavimento_id": "terreo",
+      "escala": "1:50",
+      "formato": "png"
+    },
+    {
+      "id": "v_frontal",
+      "tipo": "frontal",
+      "pavimento_id": "terreo",
+      "escala": "1:50",
+      "formato": "png"
+    },
+    {
+      "id": "v_fundos",
+      "tipo": "fundos",
+      "pavimento_id": "terreo",
+      "escala": "1:50",
+      "formato": "png"
+    },
+    {
+      "id": "v_esquerda",
+      "tipo": "lateral_esquerda",
+      "pavimento_id": "terreo",
+      "escala": "1:50",
+      "formato": "png"
+    },
+    {
+      "id": "v_direita",
+      "tipo": "lateral_direita",
+      "pavimento_id": "terreo",
+      "escala": "1:50",
+      "formato": "png"
+    }
   ],
   "historico_ajustes": []
 }

@@ -24,5 +24,13 @@ for g in model.get_entities().get_groups():
 
 problemas = [r for r in folhas_rel
              if r["bordas"] != 0 or r["soltas"] != 0 or not r["orient_ok"] or r["volume_in3"] is None]
+try:
+    lista_de_corte = corte   # definida por sketchup_moveis.py quando o script roda inteiro
+except Exception:
+    lista_de_corte = []
+pecas_por_movel = {}
+for c in lista_de_corte:
+    pecas_por_movel[c["movel"]] = pecas_por_movel.get(c["movel"], 0) + 1
 result = {"pecas_verificadas": len(folhas_rel), "pecas_com_problema": problemas,
-          "cenas": [s.get_name() for s in model.get_scenes()]}
+          "cenas": [s.get_name() for s in model.get_scenes()],
+          "pecas_por_movel": pecas_por_movel, "lista_de_corte": lista_de_corte}

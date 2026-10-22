@@ -1,13 +1,15 @@
-# Blocos de marcenaria (balcão e aéreo de 2 portas), peça por peça, para o conector Trimble SketchUp.
+# Blocos de marcenaria (balcão e aéreo de 2 portas, gaveteiro de N gavetas), peça por peça, para o conector Trimble SketchUp.
 #
 # Rodar DEPOIS de sketchup_paredes.py e sketchup_comum.py. Espera uma variável global `moveis`:
-#   [{"id", "bloco": "balcao_2_portas" | "aereo_2_portas", "parede_id", "distancia_do_inicio_mm",
+#   [{"id", "bloco": "balcao_2_portas" | "aereo_2_portas" | "gaveteiro_3_gavetas", "parede_id", "distancia_do_inicio_mm",
 #     "afastamento_mm", "elevacao_mm", "parametros": {...}}]   (tudo em mm)
 #
 # Cada móvel é um grupo com uma peça (chapa) por subgrupo, nomeada para virar lista de corte.
 # Convenção da peça: espessura = menor dimensão; comprimento = maior; largura = a do meio.
 # Padrões do bloco (NÃO vêm do projeto, confira): fundo 6 mm, zócalo recuado 50 mm, folga de porta 3 mm,
 # tampo do balcão na mesma chapa do corpo (na prática costuma ser outro material/espessura).
+# Gaveteiro: caixa de gaveta com laterais/traseira/frente interna de 15 mm e fundo de 6 mm, folga de 13 mm de
+# cada lado para a corrediça, comprimento da caixa em múltiplos de 50 mm (até 550); frentes na cor das portas do balcão.
 
 ctx = session_state["ctx"]
 MM = ctx["MM"]
@@ -23,6 +25,9 @@ FUNDO_ESP = 6.0
 RECUO_ZOCALO = 50.0
 FOLGA_PORTA = 3.0
 TAMPO_AVANCO = 20.0
+GAVETA_ESP = 15.0          # laterais, traseira e frente interna da caixa
+GAVETA_FUNDO = 6.0
+FOLGA_CORREDICA = 13.0     # de cada lado, entre a lateral do corpo e a lateral da caixa
 
 mat_corpo = get_or_create_material("MDF_Branco", 240, 240, 235)
 mat_verde = get_or_create_material("MDF_Verde", 96, 140, 120)
@@ -80,7 +85,42 @@ def aereo(asm, w, base, p):
         peca(asm, w, base, "Porta_" + str(i + 1), a0, a0 + larg, Dc, D, FOLGA_PORTA, H - FOLGA_PORTA, mat_corpo)
 
 
-BLOCOS = {"balcao_2_portas": balcao, "aereo_2_portas": aereo}
+def gaveteiro(asm, w, base, p):
+    W, H, D = p["largura_mm"], p["altura_mm"], p["profundidade_mm"]
+    e = p["espessura_chapa_mm"]
+    soc = p.get("socalo_mm", 100.0)
+    n = p.get("gavetas", 3)
+    Dc = D - e
+    peca(asm, w, base, "Lateral_Esq", 0, e, 0, Dc, 0, H - e, mat_corpo)
+    peca(asm, w, base, "Lateral_Dir", W - e, W, 0, Dc, 0, H - e, mat_corpo)
+    peca(asm, w, base, "Base", e, W - e, FUNDO_ESP, Dc, soc, soc + e, mat_corpo)
+    peca(asm, w, base, "Fundo", e, W - e, 0, FUNDO_ESP, soc, H - e, mat_corpo)
+    peca(asm, w, base, "Zocalo", e, W - e, Dc - RECUO_ZOCALO, Dc - RECUO_ZOCALO + e, 0, soc, mat_corpo)
+    peca(asm, w, base, "Tampo", 0, W, 0, D + TAMPO_AVANCO, H - e, H, mat_corpo)
+
+    util = (H - e - FOLGA_PORTA) - (soc + FOLGA_PORTA)            # altura disponível para as frentes
+    fh = (util - (n - 1) * FOLGA_PORTA) / n                      # altura de cada frente
+    comp = min(550.0, ((Dc - FUNDO_ESP - 10.0) // 50.0) * 50.0)  # comprimento da caixa (corrediça padrão)
+    hc = fh - 40.0                                               # a caixa é mais baixa que a frente
+    a0 = e + FOLGA_CORREDICA
+    a1 = W - e - FOLGA_CORREDICA
+    d1 = Dc
+    d0 = Dc - comp
+    for i in range(n):
+        g = "Gaveta" + str(i + 1) + "_"
+        zf = soc + FOLGA_PORTA + i * (fh + FOLGA_PORTA)
+        peca(asm, w, base, g + "Frente", FOLGA_PORTA, W - FOLGA_PORTA, Dc, D, zf, zf + fh, mat_verde)
+        zc = zf + 12.0
+        if i == 0:
+            zc = max(zc, soc + e + 2.0)   # a primeira caixa assenta 2 mm acima da base do corpo
+        peca(asm, w, base, g + "Lateral_Esq", a0, a0 + GAVETA_ESP, d0, d1, zc, zc + hc, mat_corpo)
+        peca(asm, w, base, g + "Lateral_Dir", a1 - GAVETA_ESP, a1, d0, d1, zc, zc + hc, mat_corpo)
+        peca(asm, w, base, g + "Traseira", a0 + GAVETA_ESP, a1 - GAVETA_ESP, d0, d0 + GAVETA_ESP, zc, zc + hc, mat_corpo)
+        peca(asm, w, base, g + "Frente_Caixa", a0 + GAVETA_ESP, a1 - GAVETA_ESP, d1 - GAVETA_ESP, d1, zc, zc + hc, mat_corpo)
+        peca(asm, w, base, g + "Fundo", a0 + GAVETA_ESP, a1 - GAVETA_ESP, d0 + GAVETA_ESP, d1 - GAVETA_ESP, zc, zc + GAVETA_FUNDO, mat_corpo)
+
+
+BLOCOS = {"balcao_2_portas": balcao, "aereo_2_portas": aereo, "gaveteiro_3_gavetas": gaveteiro}
 
 projeto_grp = None
 for g in model.get_entities().get_groups():

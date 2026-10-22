@@ -11,7 +11,7 @@ build_model com clean=true.
 
 Limites desta versão: usa só o primeiro pavimento; as paredes precisam estar na ordem do contorno
 (a ordem de paredes_ids do ambiente, que o conversor de DXF já entrega); só os blocos
-balcao_2_portas e aereo_2_portas têm desenho; acabamentos (texturas) do JSON ainda não são aplicados
+balcao_2_portas, aereo_2_portas e gaveteiro_3_gavetas têm desenho; acabamentos (texturas) do JSON ainda não são aplicados
 (as cores dos MDFs são fixas no renderizador).
 """
 import json
@@ -26,7 +26,7 @@ RENDERER_DIR = Path(__file__).resolve().parent.parent / "renderer"
 # ordem importa: paredes grava o contexto; comum, esquadrias e móveis o usam; vistas e validação fecham.
 MODULOS = ["sketchup_paredes.py", "sketchup_comum.py", "sketchup_esquadrias.py", "sketchup_moveis.py",
            "sketchup_vistas.py", "sketchup_validacao.py"]
-BLOCOS_SUPORTADOS = {"balcao_2_portas", "aereo_2_portas"}
+BLOCOS_SUPORTADOS = {"balcao_2_portas", "aereo_2_portas", "gaveteiro_3_gavetas"}
 
 
 def montar_dict(dados):
