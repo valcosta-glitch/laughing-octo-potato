@@ -19,6 +19,9 @@ import json
 import sys
 from pathlib import Path
 
+import ezdxf
+
+from dxf_para_json import ErroConversao, aplicar_corte, fator_unidade, ler_corte
 from pdf_extrair import ErroPDF, analisar, montar, overlay
 from gerar_script_sketchup import gerar_script
 from validar import checar_projeto, SCHEMA_PADRAO
@@ -26,6 +29,7 @@ from validar import checar_projeto, SCHEMA_PADRAO
 from jsonschema import Draft202012Validator
 
 PE_DIREITO_PADRAO = 2700
+CORTE_TOL = 5.0
 PORTA_ALTURA = 2100
 JANELA_ALTURA = 1200
 JANELA_PEITORIL = 1000
@@ -88,7 +92,7 @@ def aparar_sobreposicoes(paredes, g, minimo=10.0):
 
 
 def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None, pe_direito=None, grade_mm=5.0, ajustes=None,
-                  estilo="auto", traco=None):
+                  estilo="auto", traco=None, corte=None, unidade_corte=None, tol_largura_mm=None):
     """Retorna (projeto, avisos, r, a): projeto = JSON intermediário; r e a = extração, para o overlay."""
     ajustes = ajustes or {}
     r = montar(pdf, escala=escala, regiao=regiao, cor_parede=cor_parede, cor_pilar=cor_pilar, estilo=estilo, traco=traco)
@@ -139,6 +143,7 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
     vaos, altura_inferida = [], 0
     adj = ajustes.get("vaos", {})
     passagens = []
+    ajustados = {}
     for n, v in enumerate(a["vaos"], 1):
         aj = adj.get(str(n), {})
         if aj.get("remover"):
@@ -153,13 +158,35 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
         alt = aj.get("altura_mm", PORTA_ALTURA if tipo == "porta" else JANELA_ALTURA)
         peit = aj.get("peitoril_mm", 0 if tipo == "porta" else JANELA_PEITORIL)
         inferida = "altura_mm" not in aj
-        altura_inferida += inferida
+        if not inferida:
+            ajustados[f"v{n}"] = {"altura_mm": alt, "peitoril_mm": peit}
         ev = (f"{v['paralelas']} linhas paralelas na faixa da parede; batentes {v['batentes']}" if tipo == "janela"
               else f"folha de porta ({v['folhas']}), arco de giro ({v['arcos']}) e linhas de batente {v['batentes']}")
         vaos.append({"id": f"v{n}", "tipo": tipo, "eixo": eixo, "centro": centro, "largura_mm": larg,
                      "espessura_mm": esp, "altura_mm": alt, "peitoril_mm": peit,
                      "origem": "medida" if not inferida else "inferida",
                      "confianca": CONF_VAO if not inferida else CONF_ALTURA, "evidencia": ev})
+    pe_corte = None
+    if corte:
+        try:
+            doc_corte = ezdxf.readfile(str(corte))
+            avisos_corte = []
+            fator = fator_unidade(doc_corte, unidade_corte, avisos_corte)
+            pisos, tetos, retangulos = ler_corte(doc_corte.modelspace(), fator, avisos_corte)
+        except (OSError, ezdxf.DXFError) as e:
+            raise ErroPDF(f"corte não pôde ser lido: {e}")
+        except ErroConversao as e:
+            raise ErroPDF(f"corte: {e}")
+        pe_corte = aplicar_corte(pisos, tetos, retangulos, vaos, avisos_corte, tol_largura_mm)
+        avisos += [f"corte: {w}" for w in avisos_corte]
+        for v in vaos:                       # ajustes manuais têm a última palavra
+            if v["id"] in ajustados:
+                v.update(ajustados[v["id"]])
+                v["origem"], v["confianca"] = "medida", CONF_VAO
+        lidos = sum(1 for v in vaos if v["origem"] == "medida" and v["id"] not in ajustados)
+        avisos.append(f"Corte: altura e peitoril lidos para {lidos} de {len(vaos)} vão(s) por correspondência de largura "
+                      f"(±{CORTE_TOL if tol_largura_mm is None else tol_largura_mm:g} mm).")
+    altura_inferida = sum(1 for v in vaos if v["origem"] == "inferida")
     for d in a["descartados"]:
         if min(d["batentes"]) >= 1 and (d["a1"] - d["a0"]) * mm_px <= 1600:
             passagens.append(round((d["a1"] - d["a0"]) * mm_px))
@@ -171,6 +198,11 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
     avisos.append(f"Vãos sem símbolo reconhecível (folha de porta, 3+ linhas de janela) foram tratados como espaço aberto: {len(a['descartados'])} candidato(s) descartado(s).")
     avisos.append(f"Máscara de paredes coberta em {r['cobertura'] * 100:.1f}% pelas peças ({r['migalhas']} migalha(s) ignorada(s)). "
                   f"Resolução da extração: {mm_px:.1f} mm/px; bordas coladas nos vértices do desenho.")
+    if pe_corte is not None:
+        if pe_direito is not None and abs(pe_direito - pe_corte) > 1.0:
+            avisos.append(f"--pe-direito {pe_direito:g} mm difere do corte ({pe_corte:g} mm): usando o do corte")
+        pe_direito = pe_corte
+        avisos.append(f"Pé-direito de {pe_direito:g} mm vem do corte.")
     if pe_direito is None:
         pe_direito = ajustes.get("pe_direito_mm")
     if pe_direito is None:
@@ -212,6 +244,9 @@ def main():
     ap.add_argument("--pe-direito", type=float)
     ap.add_argument("--grade-mm", type=float, default=5.0)
     ap.add_argument("--ajustes", type=Path)
+    ap.add_argument("--corte", type=Path, help="DXF do corte (camadas CORTE_PISO, CORTE_TETO, CORTE_PORTAS, CORTE_JANELAS): pé-direito, altura e peitoril")
+    ap.add_argument("--unidade-corte", choices=["mm", "cm", "m"], help="unidade do DXF do corte (padrão: a do próprio arquivo)")
+    ap.add_argument("--tolerancia-largura", type=float, help="mm de diferença aceita entre vão da planta e retângulo do corte (padrão 5)")
     args = ap.parse_args()
 
     ajustes = json.loads(args.ajustes.read_text(encoding="utf-8")) if args.ajustes else None
@@ -219,7 +254,7 @@ def main():
     try:
         projeto, avisos, r, a = converter_pdf(args.pdf, args.escala, regiao, _cor(args.cor_parede) if args.cor_parede else None,
                                               _cor(args.cor_pilar) if args.cor_pilar else None, args.pe_direito, args.grade_mm, ajustes,
-                                              args.estilo, args.traco)
+                                              args.estilo, args.traco, args.corte, args.unidade_corte, args.tolerancia_largura)
     except ErroPDF as e:
         print(f"ERRO: {e}")
         return 1

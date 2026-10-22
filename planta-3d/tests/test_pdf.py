@@ -119,6 +119,83 @@ class TestSaida(unittest.TestCase):
         self.assertEqual(vaos[0]["origem"], "medida")
 
 
+def dxf_corte(caminho, piso, teto, portas, janelas, unidade_mm=True):
+    """Corte sintético 1:1 em mm: portas/janelas = lista de (largura, altura, peitoril)."""
+    import ezdxf
+    from ezdxf import units
+    doc = ezdxf.new("R2010")
+    doc.units = units.MM
+    for n in ("CORTE_PISO", "CORTE_TETO", "CORTE_PORTAS", "CORTE_JANELAS"):
+        doc.layers.add(n)
+    msp = doc.modelspace()
+    msp.add_line((0, piso), (9000, piso), dxfattribs={"layer": "CORTE_PISO"})
+    msp.add_line((0, teto), (9000, teto), dxfattribs={"layer": "CORTE_TETO"})
+    x = 500
+    for camada, itens in (("CORTE_PORTAS", portas), ("CORTE_JANELAS", janelas)):
+        for larg, alt, peit in itens:
+            msp.add_lwpolyline([(x, piso + peit), (x + larg, piso + peit), (x + larg, piso + peit + alt), (x, piso + peit + alt)],
+                               close=True, dxfattribs={"layer": camada})
+            x += larg + 300
+    doc.saveas(caminho)
+
+
+class TestCorte(unittest.TestCase):
+    def _converter_com_corte(self, seed, **kw):
+        with tempfile.TemporaryDirectory() as t:
+            pdf, dxf = Path(t) / "planta.pdf", Path(t) / "corte.dxf"
+            gab = ger.gerar(seed, pdf)
+            larg_portas = sorted({a["largura"] for a in gab["aberturas"] if a["tipo"] == "porta"})
+            larg_janelas = sorted({a["largura"] for a in gab["aberturas"] if a["tipo"] == "janela"})
+            dxf_corte(dxf, 0, 2800, [(w, 2200, 0) for w in larg_portas], [(w, 1100, 900) for w in larg_janelas])
+            projeto, avisos, _, _ = conv.converter_pdf(pdf, cor_pilar=COR_PILAR, corte=dxf, **kw)
+        return gab, projeto, avisos
+
+    def test_corte_preenche_pe_direito_altura_e_peitoril(self):
+        for seed in (1, 2, 3):
+            with self.subTest(seed=seed):
+                _, projeto, avisos = self._converter_com_corte(seed)
+                pav = projeto["pavimentos"][0]
+                self.assertEqual(pav["pe_direito_mm"], 2800)
+                for v in pav["vaos"]:
+                    self.assertEqual(v["origem"], "medida")
+                    if v["tipo"] == "porta":
+                        self.assertEqual((v["altura_mm"], v["peitoril_mm"]), (2200, 0))
+                    else:
+                        self.assertEqual((v["altura_mm"], v["peitoril_mm"]), (1100, 900))
+                self.assertFalse(any("PADRÃO" in a and "altura" in a for a in avisos), avisos)
+                self.assertTrue(any("Pé-direito de 2800" in a for a in avisos))
+
+    def test_ajuste_manual_vence_o_corte(self):
+        with tempfile.TemporaryDirectory() as t:
+            pdf, dxf = Path(t) / "planta.pdf", Path(t) / "corte.dxf"
+            gab = ger.gerar(2, pdf)
+            dxf_corte(dxf, 0, 2800, [(a["largura"], 2200, 0) for a in gab["aberturas"] if a["tipo"] == "porta"],
+                      [(a["largura"], 1100, 900) for a in gab["aberturas"] if a["tipo"] == "janela"])
+            projeto, _, _, _ = conv.converter_pdf(pdf, cor_pilar=COR_PILAR, corte=dxf, ajustes={"vaos": {"1": {"altura_mm": 2000, "peitoril_mm": 0}}})
+        self.assertEqual(projeto["pavimentos"][0]["vaos"][0]["altura_mm"], 2000)
+
+    def test_largura_sem_correspondencia_fica_padrao_e_avisa(self):
+        with tempfile.TemporaryDirectory() as t:
+            pdf, dxf = Path(t) / "planta.pdf", Path(t) / "corte.dxf"
+            ger.gerar(2, pdf)
+            dxf_corte(dxf, 0, 2800, [(555, 2200, 0)], [(777, 1100, 900)])     # larguras que a planta não tem
+            projeto, avisos, _, _ = conv.converter_pdf(pdf, cor_pilar=COR_PILAR, corte=dxf)
+        self.assertTrue(all(v["origem"] == "inferida" for v in projeto["pavimentos"][0]["vaos"]))
+        self.assertTrue(any("sem retângulo de mesma largura" in a for a in avisos), avisos)
+
+    def test_tolerancia_de_largura_permite_batente(self):
+        """Vão de alvenaria = folha + batente: com --tolerancia-largura o retângulo de 800 casa com o vão de 880."""
+        with tempfile.TemporaryDirectory() as t:
+            pdf, dxf = Path(t) / "planta.pdf", Path(t) / "corte.dxf"
+            gab = ger.gerar(2, pdf)
+            dxf_corte(dxf, 0, 2800, [(a["largura"] - 80, 2200, 0) for a in gab["aberturas"] if a["tipo"] == "porta"],
+                      [(a["largura"] - 80, 1100, 900) for a in gab["aberturas"] if a["tipo"] == "janela"])
+            sem, _, _, _ = conv.converter_pdf(pdf, cor_pilar=COR_PILAR, corte=dxf)
+            com, _, _, _ = conv.converter_pdf(pdf, cor_pilar=COR_PILAR, corte=dxf, tol_largura_mm=85)
+        self.assertTrue(all(v["origem"] == "inferida" for v in sem["pavimentos"][0]["vaos"]))
+        self.assertTrue(all(v["origem"] == "medida" for v in com["pavimentos"][0]["vaos"]))
+
+
 class TestRecusas(unittest.TestCase):
     def test_modo_contorno_e_detectado_sozinho_e_avisa(self):
         _, projeto, avisos = converter(2, estilo="contorno")

@@ -142,6 +142,18 @@ python3 tools/pdf_para_json.py planta.pdf --saida-dir saida --cor-pilar 1,0.5,0 
 
 Etapas: (1) escolhe a cor de preenchimento cujas faixas têm 80–350 mm; (2) rasteriza só esse preenchimento numa máscara exata (0,25 pt/px) e decompõe em peças retas, com a orientação de cada pixel decidida pela maior corrida (T fica com a parede mais longa, sem sobreposição) e tampas de ponta absorvidas pela peça vizinha; (3) cola as bordas nos vértices vetoriais do desenho; (4) o vão é o **trecho livre** na faixa da parede, a partir da ponta de uma peça longa (a lacuna entre peças não serve: um T esconde parte dela); (5) **porta** = folha (retângulo fino perpendicular, ou paralelo e aberto a 90° contra a parede) com comprimento ≈ largura do vão; **janela** = 3+ linhas paralelas na faixa; vão sem símbolo = espaço aberto (não vira parede); (6) páginas giradas são lidas na orientação em que a folha é vista. Sem preenchimento de parede, o **modo contorno** descrito abaixo.
 
+### Altura e peitoril pelo corte (`--corte`)
+
+A planta baixa não traz pé-direito, altura de porta/janela nem peitoril; sem corte, saem valores padrão `inferida`. Com o corte em DXF 1:1 (as mesmas camadas do fluxo DXF: `CORTE_PISO` e `CORTE_TETO`, uma linha horizontal cada; `CORTE_PORTAS` e `CORTE_JANELAS`, um retângulo fechado por tipo de vão), o conversor lê o pé-direito (teto − piso) e casa cada vão da planta com um retângulo **de mesma largura** (±5 mm): altura = altura do retângulo, peitoril = base − piso, `origem: "medida"`.
+
+```bash
+python3 tools/pdf_para_json.py planta.pdf --escala 50 --cor-pilar 1,0.5,0 --corte corte.dxf --saida-dir saida
+#   --unidade-corte mm|cm|m      se o DXF não declarar a unidade
+#   --tolerancia-largura 85      o vão de alvenaria (planta) costuma ser a folha + batente (ex.: 880 x 800 mm)
+```
+
+Sem guesswork: largura sem retângulo correspondente, ou dois retângulos de mesma largura com alturas diferentes, mantém o padrão e **avisa**; retângulo do corte sem vão correspondente também avisa (escala ou unidade diferente?). Um `--ajustes` manual tem a última palavra sobre o corte. Testado com cortes sintéticos (pé-direito, altura, peitoril, sem correspondência, tolerância e ajuste manual; a mutação "ignorar o corte" é detectada). **Não foi testado com um corte real** (as duas plantas enviadas não têm corte) e só lê DXF, não PDF de corte.
+
 ### Teste com uma planta real (casa de 3 quartos, 1:50, A4)
 
 Paredes cinza preenchidas, pilares laranja, cotas desenhadas como curvas (o texto não é legível pelo PDF). Resultado, conferido contra as **cotas impressas** lidas da imagem:

@@ -329,7 +329,7 @@ def ler_corte(msp, fator, avisos):
     return pisos, tetos, retangulos
 
 
-def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos):
+def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos, tol_largura=None):
     """Aplica o corte às aberturas (altera a lista). Retorna o pé-direito em mm, ou None."""
     if not (pisos or tetos or retangulos["porta"] or retangulos["janela"]):
         return None
@@ -357,10 +357,11 @@ def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos):
             avisos.append("Sem CORTE_PISO não dá para calcular o peitoril: retângulos de porta/janela do corte ignorados")
         return pe
 
+    tol = CORTE_TOL_LARGURA_MM if tol_largura is None else tol_largura
     usados = set()
     for ab in aberturas:
         lista = retangulos[ab["tipo"]]
-        cand = [i for i, r in enumerate(lista) if abs((r[1] - r[0]) - ab["largura_mm"]) <= CORTE_TOL_LARGURA_MM]
+        cand = [i for i, r in enumerate(lista) if abs((r[1] - r[0]) - ab["largura_mm"]) <= tol]
         if not cand:
             avisos.append(f"abertura '{ab['id']}' ({ab['tipo']}, {ab['largura_mm']:g} mm): sem retângulo de mesma largura no corte; "
                           f"altura e peitoril padrão")
