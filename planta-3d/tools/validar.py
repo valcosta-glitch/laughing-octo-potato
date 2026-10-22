@@ -94,8 +94,12 @@ def checar_livre(pav, erros, avisos):
                 avisos.append(f"vão '{v['id']}' se sobrepõe à parede '{pid}' em {dx:.0f} x {dy:.0f} mm")
         if v.get("peitoril_mm", 0) + v["altura_mm"] > pav["pe_direito_mm"]:
             erros.append(f"vão '{v['id']}': ultrapassa o pé-direito")
-        if v["tipo"] == "porta" and v.get("peitoril_mm", 0) != 0:
+        if v["tipo"] in ("porta", "porta_correr") and v.get("peitoril_mm", 0) != 0:
             avisos.append(f"vão '{v['id']}': porta com peitoril diferente de zero")
+        if v["tipo"] == "porta_correr" and not 2 <= v.get("folhas", 3) <= 6:
+            erros.append(f"vão '{v['id']}': porta de correr com {v.get('folhas')} folhas (2 a 6)")
+        if v["tipo"] != "porta_correr" and "folhas" in v:
+            erros.append(f"vão '{v['id']}': 'folhas' só vale para porta de correr")
     checar_moveis_livre(pav, erros, avisos)
     checar_acabamentos_livre(pav, erros)
 

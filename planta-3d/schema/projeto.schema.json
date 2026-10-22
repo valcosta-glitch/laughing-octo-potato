@@ -673,10 +673,18 @@
           "$ref": "#/$defs/id"
         },
         "tipo": {
+          "description": "'porta_correr': porta de vidro de correr, em trilhos, com 'folhas' painéis escalonados.",
           "enum": [
             "porta",
-            "janela"
+            "janela",
+            "porta_correr"
           ]
+        },
+        "folhas": {
+          "description": "Só porta_correr: número de painéis (2 a 6, padrão 3).",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
         },
         "eixo": {
           "description": "Direção em que a largura é medida: 'x' (parede horizontal na planta) ou 'y' (vertical).",

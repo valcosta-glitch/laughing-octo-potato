@@ -41,6 +41,7 @@ VAO_MIN_MM = 300.0
 VAO_MAX_MM = 4000.0
 AREA_MIN_FRAC = 0.5           # peça com área < 0,5 x esp^2 é migalha
 PORTA_MAX_MM = 1600.0
+CORRER_MIN_MM = 2000.0          # porta de correr: >= 3 painéis escalonados e esta largura
 TOL_LINHA_MM = 60.0           # tolerância para considerar duas peças na mesma linha de eixo
 VIZINHO_MIN_T = 0.5           # peça vizinha de um vão: mínimo de 0,5 x espessura (toco entre a porta e a parede transversal)
 
@@ -483,8 +484,7 @@ def analisar(r):
     achados = {}
     for (o, c), L in por_linha.items():
         for A in L:
-            if A["a1"] - A["a0"] < 2 * T:
-                continue                                         # toco curto não origina vão (origina falso vão de nicho)
+            toco = A["a1"] - A["a0"] < 2 * T                     # toco curto só origina vão se for porta de correr (senão é falso vão de nicho)
             for sentido in (1, -1):
                 ponta = A["a1"] if sentido == 1 else A["a0"]
                 if sentido == 1:
@@ -511,7 +511,9 @@ def analisar(r):
                 grade = gx if o == "h" else gy
                 v0, v1 = _cola(v0, grade), _cola(v1, grade)
                 chave = (o, round(c / 3), round(v0 / 4), round(v1 / 4))
-                achados[chave] = {"orient": o, "c": c, "a0": v0, "a1": v1}
+                if chave in achados and not toco:
+                    achados[chave]["de_toco"] = False
+                achados.setdefault(chave, {"orient": o, "c": c, "a0": v0, "a1": v1, "de_toco": toco})
     vaos = sorted(achados.values(), key=lambda v: (v["orient"], v["c"], v["a0"]))
 
     # evidências vetoriais dentro da faixa de cada vão
@@ -597,11 +599,47 @@ def analisar(r):
             if max(cxs) < band[0] - 6 or min(cxs) > band[2] + 6 or max(cys) < band[1] - 6 or min(cys) > band[3] + 6:
                 continue
             arcos += 1
+        # porta de correr: painéis (retângulos finos) escalonados entre os trilhos, cada um com 0,18 a 0,6 x a largura do vão
+        segs = set()
+        faixa_y = 0.8 * (T / K)
+        for d in r["desenhos"]:
+            lados_ = []                                       # (p1, p2) de cada traço: linhas e as 4 arestas de cada 're'
+            for it in d["items"]:
+                if it[0] == "l":
+                    lados_.append((it[1], it[2]))
+                elif it[0] == "re":
+                    R_ = it[1]
+                    lados_ += [(pymupdf.Point(R_.x0, R_.y0), pymupdf.Point(R_.x1, R_.y0)), (pymupdf.Point(R_.x0, R_.y1), pymupdf.Point(R_.x1, R_.y1)),
+                               (pymupdf.Point(R_.x0, R_.y0), pymupdf.Point(R_.x0, R_.y1)), (pymupdf.Point(R_.x1, R_.y0), pymupdf.Point(R_.x1, R_.y1))]
+            for p1, p2 in lados_:
+                if v["orient"] == "h":
+                    ao_longo, perp_ = abs(p2.x - p1.x), abs(p2.y - p1.y)
+                    ini_, fim_ = min(p1.x, p2.x), max(p1.x, p2.x)
+                    dentro = abs(p1.y - (band[1] + band[3]) / 2) <= faixa_y and band[0] - 2 <= ini_ and fim_ <= band[2] + 2
+                    pos_ = p1.y
+                else:
+                    ao_longo, perp_ = abs(p2.y - p1.y), abs(p2.x - p1.x)
+                    ini_, fim_ = min(p1.y, p2.y), max(p1.y, p2.y)
+                    dentro = abs(p1.x - (band[0] + band[2]) / 2) <= faixa_y and band[1] - 2 <= ini_ and fim_ <= band[3] + 2
+                    pos_ = p1.x
+                if perp_ < 0.3 and 0.18 * wpt <= ao_longo <= 0.6 * wpt and dentro:
+                    segs.add((round(pos_, 1), round(ini_, 1), round(fim_, 1)))
+        inicios = sorted({s_[1] for s_ in segs})
+        grupos = []
+        for x_ in inicios:
+            if grupos and x_ - grupos[-1] <= 3.5:
+                continue
+            grupos.append(x_)
+        v["segmentos"], v["paineis"] = len(segs), len(grupos)
+        v["extensao_paineis"] = (min(s_[1] for s_ in segs), max(s_[2] for s_ in segs)) if segs else None
         v["paralelas"], v["folhas"], v["batentes"], v["arcos"] = par, folhas, pontas, arcos
     exige_arco = sum(1 for v in vaos if v["arcos"] >= 1) >= 2       # o desenho usa arco de giro: folha sozinha não basta
     for v in vaos:
         wmm = (v["a1"] - v["a0"]) * mm_px
-        if v["arcos"] >= 1 and wmm <= PORTA_MAX_MM:
+        # >= 3 painéis e >= 2 m: janela de 2 folhas tem o mesmo desenho; a dúvida fica com a janela (o usuário troca por frase)
+        if v["arcos"] == 0 and v["segmentos"] >= 6 and v["paineis"] >= 3 and wmm >= CORRER_MIN_MM:
+            v["tipo_sugerido"] = "porta_correr"
+        elif v["arcos"] >= 1 and wmm <= PORTA_MAX_MM:
             v["tipo_sugerido"] = "porta"
         elif v["paralelas"] >= 3 or (v["paralelas"] >= 2 and min(v["batentes"]) >= 1):
             v["tipo_sugerido"] = "janela"
@@ -609,6 +647,19 @@ def analisar(r):
             v["tipo_sugerido"] = "porta"
         else:
             v["tipo_sugerido"] = None
+    for v in vaos:
+        if v["de_toco"] and v["tipo_sugerido"] != "porta_correr":
+            v["tipo_sugerido"] = None                            # vão entre tocos só vale como porta de correr
+        if v["tipo_sugerido"] == "porta_correr" and v["extensao_paineis"]:
+            # o trecho livre pode passar do painel (espaço aberto ao lado): a porta vai de onde começam os painéis até onde terminam
+            ini_pt, fim_pt = v["extensao_paineis"]
+            off = r["caixa"][0] if v["orient"] == "h" else r["caixa"][1]
+            n0, n1 = (ini_pt - off) * K, (fim_pt - off) * K
+            tol = 0.06 * (v["a1"] - v["a0"])
+            if n0 - v["a0"] > tol:
+                v["a0"] = _cola(n0, gx if v["orient"] == "h" else gy)
+            if v["a1"] - n1 > tol:
+                v["a1"] = _cola(n1, gx if v["orient"] == "h" else gy)
     descartados = [v for v in vaos if v["tipo_sugerido"] is None]
     vaos = [v for v in vaos if v["tipo_sugerido"] is not None]
     return {"Tv": Tv, "pecas": pecas, "vaos": vaos, "descartados": descartados}
@@ -634,7 +685,7 @@ def overlay(r, a, caminho, zoom=1.6):
         h = v["orient"] == "h"
         ret = ([v["a0"] * f, (v["c"] - r["T"] / 2) * f, v["a1"] * f, (v["c"] + r["T"] / 2) * f] if h
                else [(v["c"] - r["T"] / 2) * f, v["a0"] * f, (v["c"] + r["T"] / 2) * f, v["a1"] * f])
-        cor = (230, 30, 30, 170) if v["tipo_sugerido"] == "porta" else (20, 170, 60, 170)
+        cor = {"porta": (230, 30, 30, 170), "porta_correr": (160, 40, 200, 170)}.get(v["tipo_sugerido"], (20, 170, 60, 170))
         dr.rectangle(ret, fill=cor)
         dr.text((ret[0] + 2, ret[1] - 12), str(i), fill=(0, 0, 0, 255))
     img.save(caminho)

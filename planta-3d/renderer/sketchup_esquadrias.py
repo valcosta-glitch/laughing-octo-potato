@@ -2,7 +2,8 @@
 #
 # Rodar DEPOIS de sketchup_paredes.py e sketchup_comum.py (usa session_state["ctx"]).
 # Sem import, unidade em polegadas. Medidas das peças (batente 40 mm, caixilho 40 mm, folha 35 mm,
-# vidro 6 mm, piso 100 mm) são padrões do renderizador, NÃO vêm do projeto: confira com o detalhamento.
+# vidro 6 mm, piso 100 mm; porta de correr: perfil 35 x 40 mm, trilho 20 x 90 mm, sobreposição 50 mm) são padrões do
+# renderizador, NÃO vêm do projeto: confira com o detalhamento.
 
 ctx = session_state["ctx"]
 MM = ctx["MM"]
@@ -21,6 +22,13 @@ VIDRO_ESP = 6 * MM
 PISO_ESP = 100 * MM
 FOLGA = 3 * MM
 FOLGA_BASE = 8 * MM
+CORRER_BATENTE = 40 * MM       # porta de correr: montantes e cabeçalho
+CORRER_TRILHO_ALT = 20 * MM
+CORRER_TRILHO_PROF = 90 * MM
+CORRER_MOLDURA = 35 * MM       # largura do perfil de cada painel
+CORRER_PROF = 40 * MM          # espessura do perfil
+CORRER_DESLOC = 25 * MM        # os dois trilhos ficam a +-25 mm do meio da parede
+CORRER_SOBREPOSICAO = 50 * MM  # quanto um painel cobre o vizinho
 
 mat_piso = get_or_create_material("Piso_Cinza", 200, 195, 185)
 mat_madeira = get_or_create_material("Madeira_Porta", 160, 120, 80)
@@ -51,6 +59,30 @@ for w in paredes:
             leaf_group(asm, "Batente", extrude_faces(w, [u_shape], o0, o1), mat_madeira)
             folha = [(s0 + j + FOLGA, FOLGA_BASE), (s1 - j - FOLGA, FOLGA_BASE), (s1 - j - FOLGA, z1 - j - FOLGA), (s0 + j + FOLGA, z1 - j - FOLGA)]
             leaf_group(asm, "Folha", extrude_faces(w, [folha], mid - FOLHA_ESP / 2, mid + FOLHA_ESP / 2), mat_madeira)
+        elif a["tipo"] == "porta_correr":
+            # porta de vidro de correr: batente em U e trilho em alumínio; `folhas` painéis (moldura + vidro) em dois trilhos
+            # alternados, cada um sobrepondo o vizinho em CORRER_SOBREPOSICAO
+            asm.set_name("Porta_" + a["id"])
+            n = a.get("folhas", 3)
+            j = CORRER_BATENTE
+            u_shape = [(s0, 0.0), (s0 + j, 0.0), (s0 + j, z1 - j), (s1 - j, z1 - j), (s1 - j, 0.0), (s1, 0.0), (s1, z1), (s0, z1)]
+            leaf_group(asm, "Batente", extrude_faces(w, [u_shape], o0, o1), mat_aluminio)
+            prof_trilho = min(CORRER_TRILHO_PROF, o1 - o0)
+            trilho = [(s0 + j, 0.0), (s1 - j, 0.0), (s1 - j, CORRER_TRILHO_ALT), (s0 + j, CORRER_TRILHO_ALT)]
+            leaf_group(asm, "Trilho", extrude_faces(w, [trilho], mid - prof_trilho / 2, mid + prof_trilho / 2), mat_aluminio)
+            largura_util = (s1 - s0) - 2 * j
+            pw = (largura_util + (n - 1) * CORRER_SOBREPOSICAO) / n
+            zb = CORRER_TRILHO_ALT
+            zt = z1 - j - FOLGA
+            for i in range(n):
+                ps0 = s0 + j + i * (pw - CORRER_SOBREPOSICAO)
+                ps1 = ps0 + pw
+                off = mid + (CORRER_DESLOC if i % 2 else -CORRER_DESLOC)
+                f = CORRER_MOLDURA
+                anel = [(ps0, zb), (ps1, zb), (ps1, zt), (ps0, zt)]
+                furo = [(ps0 + f, zb + f), (ps1 - f, zb + f), (ps1 - f, zt - f), (ps0 + f, zt - f)]
+                leaf_group(asm, "Folha" + str(i + 1) + "_Moldura", extrude_faces(w, [anel, furo], off - CORRER_PROF / 2, off + CORRER_PROF / 2), mat_aluminio)
+                leaf_group(asm, "Folha" + str(i + 1) + "_Vidro", extrude_faces(w, [furo], off - VIDRO_ESP / 2, off + VIDRO_ESP / 2), mat_vidro)
         else:
             asm.set_name("Janela_" + a["id"])
             c = CAIXILHO

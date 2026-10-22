@@ -131,7 +131,7 @@ elif ctx_vistas is not None:
             frente = wv
     nomes_ocultos = ["Parede_" + frente["id"]]
     for ab in ctx_vistas["abs"].get(frente["id"], []):
-        nomes_ocultos.append(("Porta_" if ab["tipo"] == "porta" else "Janela_") + ab["id"])
+        nomes_ocultos.append(("Janela_" if ab["tipo"] == "janela" else "Porta_") + ab["id"])
 if nomes_ocultos:
     oculta = Layer()
     oculta.set_name("Parede_da_frente")

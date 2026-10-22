@@ -137,6 +137,51 @@ def gerar(seed, destino, rotacao=0, estilo="preenchido"):
     return gab
 
 
+def gerar_correr(destino, n_folhas=3, largura=3000, rotacao=0, com_paineis=True):
+    """Sala com UMA porta de vidro de correr entre dois tocos de parede (como nas plantas de interiores): painéis finos
+    escalonados em trilhos, sem arco nem folha. Retorna o gabarito (largura e centro do vão, número de painéis)."""
+    ESPR = 150
+    toco = 250                                           # menor que 2 x espessura: só uma porta de correr o transforma em vão
+    W = largura + 2 * (toco - ESPR // 2)
+    D = 3600
+    doc = pymupdf.open()
+    pg = doc.new_page(width=842, height=1191)
+    ox, oy = 120.0, 250.0
+
+    def P(x, y):
+        return pymupdf.Point(ox + x * PT_POR_MM, oy + (D - y) * PT_POR_MM)
+
+    def ret(x0, y0, x1, y1):
+        pg.draw_rect(pymupdf.Rect(P(x0, y1), P(x1, y0)), color=CINZA, fill=CINZA, width=0)
+
+    def linha(x0, y0, x1, y1, w=0.72):
+        pg.draw_line(P(x0, y0), P(x1, y1), color=(0, 0, 0), width=w)
+
+    ret(-ESPR / 2, -ESPR / 2, W + ESPR / 2, ESPR / 2)                                  # sul
+    ret(-ESPR / 2, ESPR / 2, ESPR / 2, D - ESPR / 2)                                   # oeste
+    ret(W - ESPR / 2, ESPR / 2, W + ESPR / 2, D - ESPR / 2)                            # leste
+    ret(-ESPR / 2, D - ESPR / 2, toco - ESPR / 2, D + ESPR / 2)                        # toco esquerdo
+    ret(W - toco + ESPR / 2, D - ESPR / 2, W + ESPR / 2, D + ESPR / 2)                 # toco direito
+    x_ini, x_fim = toco - ESPR / 2, W - toco + ESPR / 2
+    ov = 60
+    pw = (largura + (n_folhas - 1) * ov) / n_folhas
+    if com_paineis:
+        linha(x_ini, D + 45, x_fim, D + 45, 0.24)                                      # trilhos
+        linha(x_ini, D - 45, x_fim, D - 45, 0.24)
+    for i in range(n_folhas if com_paineis else 0):
+        xa = x_ini + i * (pw - ov)
+        yc = D + (i - (n_folhas - 1) / 2) * 30
+        linha(xa, yc - 15, xa + pw, yc - 15)
+        linha(xa, yc + 15, xa + pw, yc + 15)
+        linha(xa, yc - 15, xa, yc + 15)
+        linha(xa + pw, yc - 15, xa + pw, yc + 15)
+    pg.insert_text((ox, oy + D * PT_POR_MM + 80), "PLANTA BAIXA  ESC. 1:50", fontsize=10)
+    if rotacao:
+        pg.set_rotation(rotacao)
+    doc.save(destino)
+    return {"largura_mm": largura, "centro_x_mm": (x_ini + x_fim) / 2, "centro_y_mm": D, "folhas": n_folhas, "W": W, "D": D}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seed", type=int, required=True)

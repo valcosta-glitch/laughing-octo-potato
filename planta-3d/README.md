@@ -209,11 +209,26 @@ Paredes: espessuras 190 mm (externas), 130 mm (divisórias) e 240 mm (parede hac
 - **Conferência extra da extração de paredes** (cotas de cômodo das pranchas e da planta): Suíte 04 2,53 m → 2525 mm (−5); Circ./Roup. 0,93 m → 920 mm (−10); Suíte 02 2,53 m → 2515 mm (−15); Suíte máster 4,18 m → 4170 mm (−10). Com as 5 anteriores, as 9 cotas do Guarajuba ficam todas dentro de 15 mm.
 - **Medidas de marcenaria candidatas a blocos da biblioteca** (não usadas ainda; leitura de imagem, sem conferência): armários de piso a teto com profundidade 0,55 m e larguras 1,58 m (suítes 04/02) e 4,18 m (máster); bancada de apoio/península a 1,05 m de altura; bancada de banheiro a 1,05 m com espelho de 1,00 m acima; parede de tijolo de vidro 19×19 com 2,38 m de altura sobre base de 0,15 m. As pranchas **não trazem altura de porta nem de janela**.
 
-**Os vãos neste estilo são candidatos, não resultado.** Regras que funcionaram aqui: arco de giro ⇒ porta (e, quando o desenho usa arcos, folha sem arco deixa de bastar: sem isso a escada e a cozinha geravam 6 portas falsas); janela = 3+ linhas paralelas, ou 2 linhas com batente nas duas pontas. Resultado conferido no `overlay.png`: térreo 6 vãos (2 janelas, 4 portas), superior 10 (3 janelas, 7 portas), dos quais **1 era falso** (uma "janela" de 2,53 m que um humano removeu com `--ajustes '{"vaos": {"9": {"remover": true}}}'`). **Não entram**: as portas de vidro de correr da sala (3,03 m) e da suíte máster (3,08 m), que não têm faixa de parede no desenho, e a escada (as paredes ao redor dela entram como parede, mas a escada não é modelada). Os muros do garden e a parede do terreno entram como paredes de 2,70 m de altura: confira o overlay e use `--ajustes` ou `--regiao`.
+**Os vãos neste estilo são candidatos, não resultado.** Regras que funcionaram aqui: arco de giro ⇒ porta (e, quando o desenho usa arcos, folha sem arco deixa de bastar: sem isso a escada e a cozinha geravam 6 portas falsas); janela = 3+ linhas paralelas, ou 2 linhas com batente nas duas pontas. Resultado conferido no `overlay.png`: térreo 6 vãos (2 janelas, 4 portas), superior 10 (3 janelas, 7 portas), dos quais **1 era falso** (uma "janela" de 2,53 m que um humano removeu com `--ajustes '{"vaos": {"9": {"remover": true}}}'`). **Não entra**: a escada (as paredes ao redor dela entram como parede, mas a escada não é modelada). Os muros do garden e a parede do terreno entram como paredes de 2,70 m de altura: confira o overlay e use `--ajustes` ou `--regiao`.
 
-**Outros limites.** Só paredes ortogonais; sem móveis no modo livre; escada, curvas, varanda e hachura não são modeladas; vão sem folha/linhas reconhecíveis é tratado como aberto (a "passagem" com batente e sem folha aparece como aviso, sem esquadria); uma porta de correr ou de vidro sem folha desenhada seria perdida; a escolha automática da cor das paredes pode errar com escala errada (use `--cor-parede`).
+**Outros limites.** Só paredes ortogonais; escada, curvas, varanda e hachura não são modeladas; vão sem folha/linhas reconhecíveis é tratado como aberto (a "passagem" com batente e sem folha aparece como aviso, sem esquadria); uma porta de correr sem os painéis desenhados seria perdida (ver a seção de portas de correr); a escolha automática da cor das paredes pode errar com escala errada (use `--cor-parede`).
 
 **Testes** (`tests/test_pdf.py`, PDFs sintéticos com gabarito, 8 sementes, com giro 90/180/270): centros e larguras dos vãos ≤ 10 mm, extensão da planta ≤ 10 mm, tipos certos; os dois estilos (preenchido e contorno) são testados; um terceiro, linhas soltas sem polígono, tem de ser recusado com erro claro; mutações (regra de janela quebrada, 1% de erro na escala) são detectadas. Os PDFs reais não estão no repositório.
+
+### Portas de vidro de correr
+
+Tipo de vão `porta_correr` (no JSON: `tipo`, `folhas` de 2 a 6, padrão 3; vai do piso até a altura de porta, sem peitoril).
+
+**Como o PDF é lido.** Nas plantas de interiores a porta de correr não tem arco nem folha: é um vão entre dois **tocos de parede** curtos (menores que 2× a espessura) com painéis finos escalonados em trilhos. O extrator agora aceita um vão entre tocos **somente se** achar nele pelo menos 6 segmentos de painel (0,18 a 0,6 da largura) em 3 ou mais posições e a largura for de 2 m ou mais; senão o vão segue tratado como espaço aberto. O número de folhas é o número de painéis desenhados, e o vão vai de onde começam os painéis até onde terminam (o trecho livre pode se estender para um espaço aberto ao lado). Janelas de 2 folhas têm o mesmo desenho que uma porta de correr de 2 folhas: a dúvida fica com a **janela** (`transformar janela 3 em porta de correr` resolve).
+
+**Teste real (Guarajuba).** Térreo: sala 2,63 m com 3 folhas e garden 2,57 m com 4 folhas. Superior: varanda da suíte máster 2,63 m com 3 folhas. A medida é **entre os tocos**: as cotas impressas (3,03 m e 3,08 m) são maiores porque contam também os tocos, então confirme no detalhamento antes de fabricar. No SketchUp, 63 peças fechadas, 0 problema; cada porta é batente em U e trilho de alumínio, mais as folhas (moldura de 35 × 40 mm e vidro de 6 mm) em dois trilhos alternados com 50 mm de sobreposição (medidas padrão do renderizador, não vêm do projeto).
+
+| Frase (exemplos) | O que faz |
+|---|---|
+| `transformar janela 3 em porta de correr` · `... em porta de correr, 4 folhas` | troca o tipo (vai até o topo da janela, sem peitoril) |
+| `porta de correr 4: 4 folhas` · `porta 4: altura 2,20 m` · `largura do vão 4: 2,70 m` | altera |
+| `adicionar porta de correr de 2,6 m na parede p5 a 1 m do início, 3 folhas` | abre o vão |
+| `transformar vão 4 em porta` | volta a porta de abrir (tira as folhas); tudo tem desfazer exato |
 
 ## Ajustes digitados (`tools/ajustes.py`)
 

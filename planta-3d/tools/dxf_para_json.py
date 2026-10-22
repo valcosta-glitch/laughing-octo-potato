@@ -360,7 +360,8 @@ def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos, tol_largura=None)
     tol = CORTE_TOL_LARGURA_MM if tol_largura is None else tol_largura
     usados = set()
     for ab in aberturas:
-        lista = retangulos[ab["tipo"]]
+        tipo_ab = "porta" if ab["tipo"] == "porta_correr" else ab["tipo"]      # a porta de correr casa com o retângulo de porta do corte
+        lista = retangulos[tipo_ab]
         cand = [i for i, r in enumerate(lista) if abs((r[1] - r[0]) - ab["largura_mm"]) <= tol]
         if not cand:
             avisos.append(f"abertura '{ab['id']}' ({ab['tipo']}, {ab['largura_mm']:g} mm): sem retângulo de mesma largura no corte; "
@@ -375,14 +376,14 @@ def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos, tol_largura=None)
         if peitoril < -1:
             avisos.append(f"abertura '{ab['id']}': retângulo do corte abaixo do piso; ignorado")
             continue
-        if ab["tipo"] == "porta" and abs(peitoril) > 1:
+        if tipo_ab == "porta" and abs(peitoril) > 1:
             avisos.append(f"porta '{ab['id']}': peitoril {peitoril} mm no corte não é suportado (porta vai até o piso); usando 0")
             peitoril = 0
         ab["altura_mm"] = altura
         ab["peitoril_mm"] = max(peitoril, 0)
         ab["origem"] = "medida"
         ab["confianca"] = CONFIANCA_CORTE
-        usados.update((ab["tipo"], i) for i in cand)
+        usados.update((tipo_ab, i) for i in cand)
 
     for tipo in ("porta", "janela"):
         for i, r in enumerate(retangulos[tipo]):

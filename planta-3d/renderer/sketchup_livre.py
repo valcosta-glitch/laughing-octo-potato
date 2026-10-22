@@ -9,7 +9,7 @@
 # Espera `projeto` global, em milímetros:
 #   {"nome", "pe_direito_mm",
 #    "paredes": [{"id", "inicio": [x, y], "fim": [x, y], "espessura_mm", "tipo": "parede"|"pilar"}],
-#    "vaos":    [{"id", "tipo": "porta"|"janela", "eixo": "x"|"y", "centro": [x, y], "largura_mm", "espessura_mm",
+#    "vaos":    [{"id", "tipo": "porta"|"janela"|"porta_correr" (com "folhas"), "eixo": "x"|"y", "centro": [x, y], "largura_mm", "espessura_mm",
 #                 "altura_mm", "peitoril_mm"}]}
 # Limites: paredes e vãos ortogonais; os móveis (se houver) vêm de sketchup_moveis.py; o piso é uma laje retangular sob a caixa envolvente.
 
@@ -62,7 +62,7 @@ for v in projeto["vaos"]:
     quadro = {"id": v["id"], "A": A, "u": u, "nrm": (-u[1], u[0]), "L": w_, "t": t,
               "off_in": t / 2, "off_out": -t / 2, "h": H}
     paredes_vao.append(quadro)
-    abs_vao[v["id"]] = [{"id": v["id"], "tipo": v["tipo"], "s0": 0.0, "s1": w_, "z0": z0, "z1": z1}]
+    abs_vao[v["id"]] = [{"id": v["id"], "tipo": v["tipo"], "s0": 0.0, "s1": w_, "z0": z0, "z1": z1, "folhas": v.get("folhas", 3)}]
     poly = retangulo(A[0], A[1], B[0], B[1], t)
     nomes = []
     if z1 < H - 1e-6:
@@ -71,7 +71,7 @@ for v in projeto["vaos"]:
     if v["tipo"] == "janela" and z0 > 1e-6:
         leaf_group(projeto_grp, "Peitoril_" + v["id"], prism_faces(poly, 0.0, z0), mat_parede)
         nomes.append("Peitoril_" + v["id"])
-    nomes.append(("Porta_" if v["tipo"] == "porta" else "Janela_") + v["id"])
+    nomes.append(("Janela_" if v["tipo"] == "janela" else "Porta_") + v["id"])
     nomes_por_vao[v["id"]] = nomes
     xs += [q[0] for q in poly]
     ys += [q[1] for q in poly]

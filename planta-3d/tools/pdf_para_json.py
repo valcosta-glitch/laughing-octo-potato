@@ -161,7 +161,7 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
             centro, eixo = {"x": X((v["a0"] + v["a1"]) / 2), "y": Y(v["c"])}, "x"
         else:
             centro, eixo = {"x": X(v["c"]), "y": Y((v["a0"] + v["a1"]) / 2)}, "y"
-        if tipo == "porta":
+        if tipo in ("porta", "porta_correr"):
             alt_padrao, peit_padrao, do_usuario = padroes.get("altura_porta_mm", PORTA_ALTURA), 0, "altura_porta_mm" in padroes
         else:
             peit_padrao = padroes.get("peitoril_janela_mm", JANELA_PEITORIL)
@@ -176,9 +176,13 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
         if "altura_mm" in aj:
             ajustados[f"v{n}"] = {"altura_mm": alt, "peitoril_mm": peit}
         ev = (f"{v['paralelas']} linhas paralelas na faixa da parede; batentes {v['batentes']}" if tipo == "janela"
+              else f"{v['paineis']} painéis escalonados entre trilhos ({v['segmentos']} segmentos), entre tocos de parede" if tipo == "porta_correr"
               else f"folha de porta ({v['folhas']}), arco de giro ({v['arcos']}) e linhas de batente {v['batentes']}")
+        extra_vao = {}
+        if tipo == "porta_correr":
+            extra_vao["folhas"] = min(6, max(2, v["paineis"] or 3)) if v.get("paineis", 0) >= 2 else 3
         vaos.append({"id": f"v{n}", "tipo": tipo, "eixo": eixo, "centro": centro, "largura_mm": larg,
-                     "espessura_mm": esp, "altura_mm": alt, "peitoril_mm": peit,
+                     "espessura_mm": esp, "altura_mm": alt, "peitoril_mm": peit, **extra_vao,
                      "origem": ("medida" if "altura_mm" in aj else "usuario") if not inferida else "inferida",
                      "confianca": (CONF_VAO if "altura_mm" in aj else 1.0) if not inferida else
                                   (0.5 if tipo == "janela" and "topo_janela_mm" in padroes else CONF_ALTURA),
@@ -208,10 +212,12 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
         if min(d["batentes"]) >= 1 and (d["a1"] - d["a0"]) * mm_px <= 1600:
             passagens.append(round((d["a1"] - d["a0"]) * mm_px))
     if altura_inferida:
-        por_tipo = {t: [v for v in vaos if v["origem"] == "inferida" and v["tipo"] == t] for t in ("porta", "janela")}
+        por_tipo = {t: [v for v in vaos if v["origem"] == "inferida" and v["tipo"] == t] for t in ("porta", "porta_correr", "janela")}
         partes = []
         if por_tipo["porta"]:
             partes.append(f"{len(por_tipo['porta'])} porta(s) {por_tipo['porta'][0]['altura_mm']:g} mm")
+        if por_tipo["porta_correr"]:
+            partes.append(f"{len(por_tipo['porta_correr'])} porta(s) de correr {por_tipo['porta_correr'][0]['altura_mm']:g} mm")
         if por_tipo["janela"]:
             j = por_tipo["janela"][0]
             partes.append(f"{len(por_tipo['janela'])} janela(s) de {j['altura_mm']:g} mm a {j['peitoril_mm']:g} mm do piso")

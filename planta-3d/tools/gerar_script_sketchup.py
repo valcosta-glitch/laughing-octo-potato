@@ -69,7 +69,7 @@ def montar_dict_livre(dados):
         "vaos": [
             {"id": v["id"], "tipo": v["tipo"], "eixo": v["eixo"], "centro": [v["centro"]["x"], v["centro"]["y"]],
              "largura_mm": v["largura_mm"], "espessura_mm": v["espessura_mm"], "altura_mm": v["altura_mm"],
-             "peitoril_mm": v.get("peitoril_mm", 0)}
+             "peitoril_mm": v.get("peitoril_mm", 0), **({"folhas": v.get("folhas", 3)} if v["tipo"] == "porta_correr" else {})}
             for v in pav.get("vaos", [])
         ],
     }
