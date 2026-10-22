@@ -7,6 +7,7 @@ Esquema do JSON que fica entre a **leitura da planta/corte** (DXF ou IA) e o **r
 ```
 schema/projeto.schema.json     esquema (JSON Schema 2020-12)
 exemplos/cozinha-simples.json  cozinha 4,00 x 3,00 m com porta, janela, balcão, gaveteiro e aéreo
+exemplos/*.dxf                 cozinha-planta, cozinha-corte (separado) e sala-L-planta (corte no mesmo arquivo)
 tools/validar.py               valida esquema + coerência geométrica
 tools/planta_para_skp.py       DA PLANTA DXF AO SCRIPT DO SKETCHUP, num comando (começa por aqui)
 tools/dxf_para_json.py         converte uma planta DXF simples neste JSON
@@ -56,6 +57,8 @@ Além do esquema, o validador confere: calibração coerente, ids únicos, abert
 ```bash
 pip install -r requirements.txt
 python3 tools/planta_para_skp.py exemplos/sala-L-planta.dxf --saida-dir saida --calibracao 0,0,600,0,6000
+# com o corte em outro arquivo:
+python3 tools/planta_para_skp.py exemplos/cozinha-planta.dxf --corte exemplos/cozinha-corte.dxf --saida-dir saida --calibracao 0,0,4000,0,4000
 ```
 
 Escreve `saida/projeto.json` (confira os valores marcados `inferida`) e `saida/script_sketchup.py`. Cole o script em `build_model` (com `clean: true`) do conector Trimble SketchUp e depois use `save_model`. O comando para com erro, sem escrever nada, se a conversão ou a validação falhar.
@@ -67,10 +70,14 @@ Convenção de camadas do DXF (sem diferenciar maiúsculas):
 | `PAREDES` | linhas ou polilinhas sobre o **eixo** das paredes (um contorno fechado) |
 | `PORTAS` / `JANELAS` | uma linha por vão, apoiada sobre a parede |
 | `MOVEIS_<BLOCO>` | um **retângulo fechado** por móvel, com a face de trás junto à parede (até 150 mm) e alinhado a ela |
+| `CORTE_PISO`, `CORTE_TETO` | **corte 1:1** (no mesmo DXF, em qualquer lugar, ou em outro arquivo com `--corte`): uma linha horizontal cada; o pé-direito é a distância entre elas |
+| `CORTE_PORTAS`, `CORTE_JANELAS` | um **retângulo fechado** alinhado aos eixos por tipo de vão, na vista do corte |
+
+**Como o corte é lido.** O pé-direito vem da distância entre as linhas de piso e teto (e tem prioridade sobre `--pe-direito`). A altura de cada abertura é a altura do retângulo e o peitoril é a distância dele ao piso; o retângulo vale para as aberturas da planta do **mesmo tipo e da mesma largura** (±5 mm). Os valores lidos saem com `origem: "medida"` e confiança 0,9. O conversor **não chuta**: avisa e mantém o padrão quando (a) uma abertura não tem retângulo de mesma largura, (b) há retângulos de mesma largura com alturas ou peitoris diferentes (ambíguo), (c) falta a linha de piso (sem ela não há peitoril) ou há linhas repetidas, (d) um retângulo do corte não corresponde a nenhuma abertura (sinal de escala ou unidade diferente no corte). Porta com peitoril no corte é forçada a 0. Uma abertura mais alta que o pé-direito é erro de validação.
 
 Blocos: `MOVEIS_BALCAO_2_PORTAS`, `MOVEIS_AEREO_2_PORTAS`, `MOVEIS_GAVETEIRO_3_GAVETAS`. Largura e profundidade vêm do retângulo; altura (870 / 700 / 870 mm), chapa (18 / 15 / 18 mm), zócalo e elevação (aéreo a 1400 mm) são **padrões do bloco** (`BLOCOS_PADRAO` em `tools/dxf_para_json.py`), não vêm do desenho. A parede de apoio é descoberta pela geometria.
 
-Testado de ponta a ponta com a cozinha (mm, antihorária) e com `sala-L-planta.dxf` (em **cm**, desenhada no sentido **horário**, com parede reentrante, 3 aberturas e 5 móveis): o conversor reorienta o contorno, converte a unidade e ancora os móveis; o script rodou no conector com 68 peças sólidas verificadas e sem problemas. O que não é validado: se as medidas desenhadas estão certas (isso é do projeto), e a aparência das cenas (ver abaixo).
+Testado de ponta a ponta com a cozinha (mm, com corte em arquivo separado: pé-direito 2800, porta 2200, janela 1200 a 1000 do piso, e as alturas conferidas de volta no SketchUp) e com `sala-L-planta.dxf` (em **cm**, desenhada no sentido **horário**, com parede reentrante, 3 aberturas e 5 móveis): o conversor reorienta o contorno, converte a unidade e ancora os móveis; o script rodou no conector com 68 peças sólidas verificadas e sem problemas. O que não é validado: se as medidas desenhadas estão certas (isso é do projeto), e a aparência das cenas (ver abaixo).
 
 O validador recusa móveis sobrepostos na mesma parede e avisa quando um móvel cruza uma porta ou janela.
 
@@ -92,7 +99,7 @@ Convenção de camadas do DXF (sem diferenciar maiúsculas):
 
 O que o conversor faz: ajusta pontos a menos de 2 mm, ordena as paredes num contorno anti-horário, calcula posição e largura de cada abertura ao longo da parede e roda o validador. Unidade vem do cabeçalho do DXF (`$INSUNITS`) ou de `--unidade`. Sem unidade declarada e sem `--unidade`, ele recusa em vez de adivinhar.
 
-O que **não** vem do desenho sai marcado `origem: "inferida"` com confiança 0,5: espessura das paredes (`--espessura`, padrão 150 mm), alturas e peitoril das aberturas, sentido de abertura e a calibração, quando `--calibracao` não é informada.
+O que **não** vem do desenho sai marcado `origem: "inferida"` com confiança 0,5: espessura das paredes (`--espessura`, padrão 150 mm), alturas e peitoril das aberturas **sem corte**, sentido de abertura e a calibração, quando `--calibracao` não é informada.
 
 ## Desenhar no SketchUp (conector Trimble)
 

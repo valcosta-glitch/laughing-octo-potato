@@ -187,6 +187,120 @@ class TestMoveis(unittest.TestCase):
         self.assertEqual(conv.validar(projeto)[0], [])
 
 
+class TestCorte(unittest.TestCase):
+    """Leitura do corte: pé-direito pela distância piso-teto; altura e peitoril por retângulo de mesma largura."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def doc_planta(self, aberturas):
+        """Sala 4000x3000 com as aberturas dadas: lista de (camada, x0, x1) sobre a parede sul."""
+        doc = novo_doc()
+        for nome in ("CORTE_PISO", "CORTE_TETO", "CORTE_PORTAS", "CORTE_JANELAS"):
+            doc.layers.add(nome)
+        retangulo(doc.modelspace(), [(0, 0), (4000, 0), (4000, 3000), (0, 3000)])
+        for camada, x0, x1 in aberturas:
+            doc.modelspace().add_line((x0, 0), (x1, 0), dxfattribs={"layer": camada})
+        return doc
+
+    def corte(self, doc, teto=2800, caixas=(), piso=True):
+        msp = doc.modelspace()
+        if piso:
+            msp.add_line((0, -5000), (4000, -5000), dxfattribs={"layer": "CORTE_PISO"})
+        msp.add_line((0, -5000 + teto), (4000, -5000 + teto), dxfattribs={"layer": "CORTE_TETO"})
+        for camada, x0, x1, y0, y1 in caixas:   # y relativo ao piso
+            msp.add_lwpolyline([(x0, -5000 + y0), (x1, -5000 + y0), (x1, -5000 + y1), (x0, -5000 + y1)], close=True,
+                               dxfattribs={"layer": camada})
+
+    def converte(self, doc):
+        caminho = Path(self.tmp.name) / "c.dxf"
+        doc.saveas(caminho)
+        return conv.converter(caminho)
+
+    def test_exemplo_com_corte_separado(self):
+        projeto, avisos = conv.converter(RAIZ / "exemplos" / "cozinha-planta.dxf", corte=RAIZ / "exemplos" / "cozinha-corte.dxf",
+                                         calibracao=[0, 0, 4000, 0, 4000])
+        pav = projeto["pavimentos"][0]
+        self.assertEqual(pav["pe_direito_mm"], 2800.0)
+        porta = [a for a in pav["aberturas"] if a["tipo"] == "porta"][0]
+        janela = [a for a in pav["aberturas"] if a["tipo"] == "janela"][0]
+        self.assertEqual((porta["altura_mm"], porta["peitoril_mm"], porta["origem"]), (2200, 0, "medida"))
+        self.assertEqual((janela["altura_mm"], janela["peitoril_mm"], janela["origem"]), (1200, 1000, "medida"))
+        self.assertEqual(projeto["fonte"]["arquivo_corte"], "cozinha-corte.dxf")
+        self.assertEqual(conv.validar(projeto)[0], [])
+
+    def test_corte_no_mesmo_dxf_com_unidade_em_cm(self):
+        projeto, _ = conv.converter(RAIZ / "exemplos" / "sala-L-planta.dxf", calibracao=[0, 0, 600, 0, 6000])
+        pav = projeto["pavimentos"][0]
+        self.assertEqual(pav["pe_direito_mm"], 2600.0)
+        por_id = {a["id"]: a for a in pav["aberturas"]}
+        self.assertEqual((por_id["janela_1"]["altura_mm"], por_id["janela_1"]["peitoril_mm"]), (1200, 900))
+        self.assertEqual((por_id["janela_2"]["altura_mm"], por_id["janela_2"]["peitoril_mm"]), (1000, 1100))
+
+    def test_sem_corte_usa_padrao_e_avisa(self):
+        projeto, avisos = self.converte(self.doc_planta([("JANELAS", 1000, 2200)]))
+        pav = projeto["pavimentos"][0]
+        self.assertEqual(pav["pe_direito_mm"], 2700.0)
+        self.assertEqual(pav["aberturas"][0]["origem"], "inferida")
+        self.assertTrue(any("padrão" in a and "janela_1" in a for a in avisos))
+
+    def test_corte_tem_prioridade_sobre_pe_direito_informado(self):
+        doc = self.doc_planta([("JANELAS", 1000, 2200)])
+        self.corte(doc, teto=2900, caixas=[("CORTE_JANELAS", 1000, 2200, 1000, 2100)])
+        caminho = Path(self.tmp.name) / "p.dxf"
+        doc.saveas(caminho)
+        projeto, avisos = conv.converter(caminho, pe_direito=2500)
+        self.assertEqual(projeto["pavimentos"][0]["pe_direito_mm"], 2900.0)
+        self.assertTrue(any("difere do corte" in a for a in avisos))
+
+    def test_largura_repetida_com_alturas_diferentes_nao_e_chutada(self):
+        doc = self.doc_planta([("JANELAS", 500, 1700), ("JANELAS", 2000, 3200)])   # duas janelas de 1200
+        self.corte(doc, caixas=[("CORTE_JANELAS", 0, 1200, 1000, 2100), ("CORTE_JANELAS", 2000, 3200, 900, 2000)])
+        projeto, avisos = self.converte(doc)
+        for a in projeto["pavimentos"][0]["aberturas"]:
+            self.assertEqual((a["altura_mm"], a["peitoril_mm"], a["origem"]), (1000, 1100, "inferida"))
+        self.assertTrue(any("ambíguo" in a for a in avisos))
+
+    def test_largura_repetida_com_mesma_altura_vale_para_as_duas(self):
+        doc = self.doc_planta([("JANELAS", 500, 1700), ("JANELAS", 2000, 3200)])
+        self.corte(doc, caixas=[("CORTE_JANELAS", 0, 1200, 1000, 2100)])
+        projeto, _ = self.converte(doc)
+        for a in projeto["pavimentos"][0]["aberturas"]:
+            self.assertEqual((a["altura_mm"], a["peitoril_mm"], a["origem"]), (1100, 1000, "medida"))
+
+    def test_retangulo_sem_abertura_correspondente_avisa_escala(self):
+        doc = self.doc_planta([("JANELAS", 1000, 2200)])
+        self.corte(doc, caixas=[("CORTE_JANELAS", 0, 120, 1000, 2100)])   # 120 mm: corte em outra escala/unidade
+        projeto, avisos = self.converte(doc)
+        self.assertEqual(projeto["pavimentos"][0]["aberturas"][0]["origem"], "inferida")
+        self.assertTrue(any("escala ou unidade" in a for a in avisos))
+        self.assertTrue(any("sem retângulo de mesma largura" in a for a in avisos))
+
+    def test_sem_linha_de_piso_nao_calcula_peitoril(self):
+        doc = self.doc_planta([("JANELAS", 1000, 2200)])
+        self.corte(doc, piso=False, caixas=[("CORTE_JANELAS", 1000, 2200, 1000, 2100)])
+        projeto, avisos = self.converte(doc)
+        self.assertEqual(projeto["pavimentos"][0]["aberturas"][0]["origem"], "inferida")
+        self.assertEqual(projeto["pavimentos"][0]["pe_direito_mm"], 2700.0)
+        self.assertTrue(any("Falta CORTE_PISO" in a for a in avisos))
+
+    def test_porta_com_peitoril_no_corte_vai_para_zero(self):
+        doc = self.doc_planta([("PORTAS", 500, 1300)])
+        self.corte(doc, caixas=[("CORTE_PORTAS", 0, 800, 200, 2300)])
+        projeto, avisos = self.converte(doc)
+        porta = projeto["pavimentos"][0]["aberturas"][0]
+        self.assertEqual((porta["altura_mm"], porta["peitoril_mm"]), (2100, 0))
+        self.assertTrue(any("peitoril" in a and "não é suportado" in a for a in avisos))
+
+    def test_abertura_mais_alta_que_o_pe_direito_e_erro_de_validacao(self):
+        doc = self.doc_planta([("JANELAS", 1000, 2200)])
+        self.corte(doc, teto=2000, caixas=[("CORTE_JANELAS", 1000, 2200, 1000, 2500)])
+        projeto, _ = self.converte(doc)
+        erros, _ = conv.validar(projeto)
+        self.assertTrue(any("ultrapassa a altura" in e for e in erros))
+
+
 class TestPlantaEmL(unittest.TestCase):
     """Planta em L, em centímetros, desenhada no sentido horário: exercita reorientação, unidade e parede reentrante."""
 

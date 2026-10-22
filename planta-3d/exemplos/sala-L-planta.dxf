@@ -489,7 +489,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461336.542488426
+2461336.546064815
   9
 $TDUCREATE
  40
@@ -497,7 +497,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461336.542488426
+2461336.546064815
   9
 $TDUUPDATE
  40
@@ -549,7 +549,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-41
+4A
   9
 $SURFTAB1
  70
@@ -929,11 +929,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{5F5A9578-427E-4249-A7A7-56C4AD04F872}
+{2BFD0A5D-7670-493C-A3D0-80177A82B979}
   9
 $VERSIONGUID
   2
-{366D5840-A6B3-4F67-B500-C6C569DAF336}
+{ED712A4A-44C7-49B7-96E8-3A7418A0E569}
   9
 $EXTNAMES
 290
@@ -1323,9 +1323,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1339,9 +1339,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -1549,7 +1549,7 @@ LAYER
 100
 AcDbSymbolTable
  70
-8
+12
   0
 LAYER
   5
@@ -1745,6 +1745,102 @@ Continuous
 347
 21
   0
+LAYER
+  5
+35
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CORTE_PISO
+ 70
+0
+ 62
+7
+  6
+Continuous
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+36
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CORTE_TETO
+ 70
+0
+ 62
+7
+  6
+Continuous
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+37
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CORTE_PORTAS
+ 70
+0
+ 62
+7
+  6
+Continuous
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+38
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CORTE_JANELAS
+ 70
+0
+ 62
+7
+  6
+Continuous
+370
+-3
+390
+13
+347
+21
+  0
 ENDTAB
   0
 TABLE
@@ -1845,7 +1941,7 @@ ACAD
   0
 APPID
   5
-3E
+47
 330
 3
 100
@@ -1859,7 +1955,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-3F
+48
 330
 3
 100
@@ -2169,7 +2265,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-35
+39
 330
 17
 100
@@ -2209,7 +2305,7 @@ AcDbPolyline
   0
 LINE
   5
-36
+3A
 330
 17
 100
@@ -2233,7 +2329,7 @@ AcDbLine
   0
 LINE
   5
-37
+3B
 330
 17
 100
@@ -2257,7 +2353,7 @@ AcDbLine
   0
 LINE
   5
-38
+3C
 330
 17
 100
@@ -2281,7 +2377,7 @@ AcDbLine
   0
 LWPOLYLINE
   5
-39
+3D
 330
 17
 100
@@ -2313,7 +2409,7 @@ AcDbPolyline
   0
 LWPOLYLINE
   5
-3A
+3E
 330
 17
 100
@@ -2345,7 +2441,7 @@ AcDbPolyline
   0
 LWPOLYLINE
   5
-3B
+3F
 330
 17
 100
@@ -2377,7 +2473,7 @@ AcDbPolyline
   0
 LWPOLYLINE
   5
-3C
+40
 330
 17
 100
@@ -2409,7 +2505,7 @@ AcDbPolyline
   0
 LWPOLYLINE
   5
-3D
+41
 330
 17
 100
@@ -2438,6 +2534,150 @@ AcDbPolyline
 282.5
  20
 450.0
+  0
+LINE
+  5
+42
+330
+17
+100
+AcDbEntity
+  8
+CORTE_PISO
+100
+AcDbLine
+ 10
+800.0
+ 20
+0.0
+ 30
+0.0
+ 11
+1200.0
+ 21
+0.0
+ 31
+0.0
+  0
+LINE
+  5
+43
+330
+17
+100
+AcDbEntity
+  8
+CORTE_TETO
+100
+AcDbLine
+ 10
+800.0
+ 20
+260.0
+ 30
+0.0
+ 11
+1200.0
+ 21
+260.0
+ 31
+0.0
+  0
+LWPOLYLINE
+  5
+44
+330
+17
+100
+AcDbEntity
+  8
+CORTE_PORTAS
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+810.0
+ 20
+0.0
+ 10
+900.0
+ 20
+0.0
+ 10
+900.0
+ 20
+210.0
+ 10
+810.0
+ 20
+210.0
+  0
+LWPOLYLINE
+  5
+45
+330
+17
+100
+AcDbEntity
+  8
+CORTE_JANELAS
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+910.0
+ 20
+90.0
+ 10
+1030.0
+ 20
+90.0
+ 10
+1030.0
+ 20
+210.0
+ 10
+910.0
+ 20
+210.0
+  0
+LWPOLYLINE
+  5
+46
+330
+17
+100
+AcDbEntity
+  8
+CORTE_JANELAS
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+1040.0
+ 20
+110.0
+ 10
+1190.0
+ 20
+110.0
+ 10
+1190.0
+ 20
+210.0
+ 10
+1040.0
+ 20
+210.0
   0
 ENDSEC
   0
@@ -3429,7 +3669,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-40
+49
   0
 DICTIONARYVAR
   5
@@ -3441,11 +3681,11 @@ DictionaryVariables
 280
 0
   1
-1.4.5 @ 2026-10-22T13:01:11.555535+00:00
+1.4.5 @ 2026-10-22T13:06:20.081939+00:00
   0
 DICTIONARYVAR
   5
-40
+49
 330
 2D
 100
@@ -3453,7 +3693,7 @@ DictionaryVariables
 280
 0
   1
-1.4.5 @ 2026-10-22T13:01:11.556694+00:00
+1.4.5 @ 2026-10-22T13:06:20.084290+00:00
   0
 ENDSEC
   0

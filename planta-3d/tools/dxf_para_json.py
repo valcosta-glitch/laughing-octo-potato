@@ -5,6 +5,11 @@ Convenção de camadas (nomes sem diferenciar maiúsculas):
   PAREDES  linhas ou polilinhas sobre o EIXO das paredes
   PORTAS   uma linha por porta, cobrindo o vão, apoiada sobre a parede
   JANELAS  uma linha por janela, cobrindo o vão, apoiada sobre a parede
+  CORTE_PISO, CORTE_TETO  uma linha horizontal cada, num desenho de corte 1:1 (no mesmo DXF ou em outro,
+           passado com --corte): o pé-direito é a distância entre elas
+  CORTE_PORTAS, CORTE_JANELAS  um retângulo fechado por tipo de vão, na vista do corte: a altura é a do
+           retângulo e o peitoril é a distância dele ao piso. Vale para as aberturas da planta do mesmo
+           tipo e da MESMA largura (±5 mm); largura repetida com alturas diferentes é ambígua e não é chutada
   MOVEIS_<BLOCO>  um retângulo fechado (LWPOLYLINE de 4 pontos) por móvel, com a face de trás junto
            à parede; <BLOCO> é um bloco da biblioteca: MOVEIS_BALCAO_2_PORTAS, MOVEIS_AEREO_2_PORTAS,
            MOVEIS_GAVETEIRO_3_GAVETAS. Largura e profundidade vêm do retângulo; altura, chapa e
@@ -12,11 +17,11 @@ Convenção de camadas (nomes sem diferenciar maiúsculas):
 
 Uso:
   python3 dxf_para_json.py planta.dxf saida.json [--unidade mm|cm|m]
-      [--espessura 150] [--pe-direito 2700]
+      [--espessura 150] [--pe-direito 2700] [--corte corte.dxf]
       [--calibracao x1,y1,x2,y2,medida_mm]
 
 Limites desta versão: só paredes retas, um único contorno fechado (uma peça), móveis só
-encostados (até 150 mm) numa parede e alinhados a ela, alturas de abertura padrão (a leitura do corte vem em outra fase). O que não vem do desenho
+encostados (até 150 mm) numa parede e alinhados a ela, corte só com retângulos alinhados aos eixos. O que não vem do desenho
 sai marcado com origem 'inferida' para a tela de conferência.
 """
 import argparse
@@ -38,6 +43,9 @@ ALTURA_PORTA_MM = 2100
 ALTURA_JANELA_MM = 1000
 PEITORIL_JANELA_MM = 1100
 CONFIANCA_INFERIDA = 0.5
+CONFIANCA_CORTE = 0.9
+PE_DIREITO_PADRAO = 2700.0
+CORTE_TOL_LARGURA_MM = 5.0
 
 # Padrões por bloco (mm). "elevacao_mm" vai para o apoio; o resto vira "parametros".
 BLOCOS_PADRAO = {
@@ -282,8 +290,109 @@ def ler_moveis(msp, fator, paredes, avisos):
     return moveis
 
 
-def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=2700.0, calibracao=None):
-    """Retorna (projeto_dict, avisos)."""
+def _y_da_linha_horizontal(e, fator):
+    if e.dxftype() == "LINE" and abs(e.dxf.start.y - e.dxf.end.y) * fator < 1.0:
+        return e.dxf.start.y * fator
+    return None
+
+
+def _caixa_alinhada(e, fator):
+    """(xmin, xmax, ymin, ymax) em mm de um retângulo fechado alinhado aos eixos, ou None."""
+    pts = retangulo_da_entidade(e, fator)
+    if pts is None:
+        return None
+    xs = sorted(p[0] for p in pts)
+    ys = sorted(p[1] for p in pts)
+    if xs[1] - xs[0] > 1.0 or xs[3] - xs[2] > 1.0 or ys[1] - ys[0] > 1.0 or ys[3] - ys[2] > 1.0:
+        return None
+    return xs[0], xs[3], ys[0], ys[3]
+
+
+def ler_corte(msp, fator, avisos):
+    """Lê as camadas CORTE_*. Retorna (pisos, tetos, retangulos) com valores em mm."""
+    pisos, tetos = [], []
+    retangulos = {"porta": [], "janela": []}
+    for e in msp:
+        camada = e.dxf.layer.upper()
+        if camada in ("CORTE_PISO", "CORTE_TETO"):
+            y = _y_da_linha_horizontal(e, fator)
+            if y is None:
+                avisos.append(f"camada {camada}: só linhas horizontais são lidas; {e.dxftype()} ignorada")
+                continue
+            (pisos if camada == "CORTE_PISO" else tetos).append(y)
+        elif camada in ("CORTE_PORTAS", "CORTE_JANELAS"):
+            caixa = _caixa_alinhada(e, fator)
+            if caixa is None:
+                avisos.append(f"camada {camada}: só retângulos fechados alinhados aos eixos são lidos; {e.dxftype()} ignorada")
+                continue
+            retangulos["porta" if camada == "CORTE_PORTAS" else "janela"].append(caixa)
+    return pisos, tetos, retangulos
+
+
+def aplicar_corte(pisos, tetos, retangulos, aberturas, avisos):
+    """Aplica o corte às aberturas (altera a lista). Retorna o pé-direito em mm, ou None."""
+    if not (pisos or tetos or retangulos["porta"] or retangulos["janela"]):
+        return None
+
+    piso = teto = None
+    for nome, valores in (("CORTE_PISO", pisos), ("CORTE_TETO", tetos)):
+        if len(valores) > 1:
+            avisos.append(f"{nome} tem {len(valores)} linhas: ambíguo, ignorado")
+    if len(pisos) == 1:
+        piso = pisos[0]
+    if len(tetos) == 1:
+        teto = tetos[0]
+
+    pe = None
+    if piso is not None and teto is not None:
+        if teto - piso >= 1500.0:
+            pe = round(teto - piso, 1)
+        else:
+            avisos.append(f"CORTE_PISO e CORTE_TETO distam só {teto - piso:.0f} mm; pé-direito do corte ignorado")
+    else:
+        avisos.append("Falta CORTE_PISO ou CORTE_TETO (ou há linhas repetidas): pé-direito do corte não foi lido")
+
+    if piso is None:
+        if retangulos["porta"] or retangulos["janela"]:
+            avisos.append("Sem CORTE_PISO não dá para calcular o peitoril: retângulos de porta/janela do corte ignorados")
+        return pe
+
+    usados = set()
+    for ab in aberturas:
+        lista = retangulos[ab["tipo"]]
+        cand = [i for i, r in enumerate(lista) if abs((r[1] - r[0]) - ab["largura_mm"]) <= CORTE_TOL_LARGURA_MM]
+        if not cand:
+            avisos.append(f"abertura '{ab['id']}' ({ab['tipo']}, {ab['largura_mm']:g} mm): sem retângulo de mesma largura no corte; "
+                          f"altura e peitoril padrão")
+            continue
+        valores = {(round(lista[i][3] - lista[i][2]), round(lista[i][2] - piso)) for i in cand}
+        if len(valores) > 1:
+            avisos.append(f"abertura '{ab['id']}' ({ab['tipo']}, {ab['largura_mm']:g} mm): {len(valores)} retângulos de mesma largura "
+                          f"com alturas/peitoris diferentes no corte (ambíguo); altura e peitoril padrão")
+            continue
+        altura, peitoril = valores.pop()
+        if peitoril < -1:
+            avisos.append(f"abertura '{ab['id']}': retângulo do corte abaixo do piso; ignorado")
+            continue
+        if ab["tipo"] == "porta" and abs(peitoril) > 1:
+            avisos.append(f"porta '{ab['id']}': peitoril {peitoril} mm no corte não é suportado (porta vai até o piso); usando 0")
+            peitoril = 0
+        ab["altura_mm"] = altura
+        ab["peitoril_mm"] = max(peitoril, 0)
+        ab["origem"] = "medida"
+        ab["confianca"] = CONFIANCA_CORTE
+        usados.update((ab["tipo"], i) for i in cand)
+
+    for tipo in ("porta", "janela"):
+        for i, r in enumerate(retangulos[tipo]):
+            if (tipo, i) not in usados:
+                avisos.append(f"retângulo de {tipo} no corte (largura {r[1] - r[0]:.0f} mm) não corresponde a nenhuma abertura da planta "
+                              f"(escala ou unidade diferente?)")
+    return pe
+
+
+def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=None, calibracao=None, corte=None):
+    """Retorna (projeto_dict, avisos). `corte`: caminho de um DXF de corte; sem ele lê as camadas CORTE_* do próprio DXF."""
     avisos = []
     doc = ezdxf.readfile(str(caminho_dxf))
     msp = doc.modelspace()
@@ -321,10 +430,26 @@ def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=2700.0, cal
 
     aberturas = construir_aberturas(msp, "PORTAS", "porta", paredes, espessura, fator, avisos)
     aberturas += construir_aberturas(msp, "JANELAS", "janela", paredes, espessura, fator, avisos)
-    if aberturas:
-        avisos.append(
-            "Alturas de porta/janela e peitoril são padrão; a leitura do corte ainda não está implementada."
-        )
+
+    if corte:
+        doc_corte = ezdxf.readfile(str(corte))
+        msp_corte = doc_corte.modelspace()
+        fator_corte = fator_unidade(doc_corte, unidade, avisos)
+    else:
+        msp_corte, fator_corte = msp, fator
+    pisos, tetos, retangulos = ler_corte(msp_corte, fator_corte, avisos)
+    pe_corte = aplicar_corte(pisos, tetos, retangulos, aberturas, avisos)
+    if pe_corte is not None:
+        if pe_direito is not None and abs(pe_direito - pe_corte) > 1.0:
+            avisos.append(f"--pe-direito {pe_direito:g} mm difere do corte ({pe_corte:g} mm): usando o do corte")
+        pe_direito = pe_corte
+        avisos.append(f"Pé-direito de {pe_direito:g} mm vem do corte.")
+    elif pe_direito is None:
+        pe_direito = PE_DIREITO_PADRAO
+        avisos.append(f"Pé-direito assumido em {pe_direito:g} mm (sem corte e sem --pe-direito).")
+    padrao = [ab["id"] for ab in aberturas if ab["origem"] == "inferida"]
+    if padrao:
+        avisos.append("Altura, peitoril e sentido de abertura são padrão (não vêm do desenho) em: " + ", ".join(padrao))
 
     if calibracao:
         x1, y1, x2, y2, medida = calibracao
@@ -375,7 +500,9 @@ def converter(caminho_dxf, unidade=None, espessura=150.0, pe_direito=2700.0, cal
             "calibracao": cal,
             "tolerancia_mm": 10,
         },
-        "fonte": {"tipo": "dxf", "arquivo": Path(caminho_dxf).name, "confianca_global": CONFIANCA_INFERIDA},
+        "fonte": {"tipo": "dxf", "arquivo": Path(caminho_dxf).name,
+                  "arquivo_corte": Path(corte).name if corte else Path(caminho_dxf).name + " (camadas CORTE_*)",
+                  "confianca_global": CONFIANCA_INFERIDA},
         "pavimentos": [pavimento],
         "vistas": [],
         "historico_ajustes": [],
@@ -400,7 +527,8 @@ def main():
     ap.add_argument("saida", type=Path)
     ap.add_argument("--unidade", choices=sorted(UNIDADE_PARA_MM))
     ap.add_argument("--espessura", type=float, default=150.0)
-    ap.add_argument("--pe-direito", type=float, default=2700.0)
+    ap.add_argument("--pe-direito", type=float, default=None, help="padrão 2700; o corte, se houver, tem prioridade")
+    ap.add_argument("--corte", type=Path, help="DXF do corte (camadas CORTE_*); sem ele lê as camadas CORTE_* do próprio DXF")
     ap.add_argument("--calibracao", help="x1,y1,x2,y2,medida_mm (pontos nas unidades do DXF)")
     args = ap.parse_args()
 
@@ -413,7 +541,7 @@ def main():
             ap.error("--calibracao precisa de 5 números: x1,y1,x2,y2,medida_mm")
 
     try:
-        projeto, avisos = converter(args.dxf, args.unidade, args.espessura, args.pe_direito, calibracao)
+        projeto, avisos = converter(args.dxf, args.unidade, args.espessura, args.pe_direito, calibracao, args.corte)
     except ErroConversao as e:
         print(f"ERRO: {e}")
         return 1

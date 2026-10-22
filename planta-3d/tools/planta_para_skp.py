@@ -3,9 +3,9 @@
 
 Uso:
   python3 planta_para_skp.py planta.dxf --saida-dir saida [--unidade mm|cm|m]
-      [--espessura 150] [--pe-direito 2700] [--calibracao x1,y1,x2,y2,medida_mm]
+      [--espessura 150] [--pe-direito 2700] [--corte corte.dxf] [--calibracao x1,y1,x2,y2,medida_mm]
 
-Faz: lê o DXF (camadas PAREDES, PORTAS, JANELAS, MOVEIS_<BLOCO>), monta o JSON intermediário, valida,
+Faz: lê o DXF (camadas PAREDES, PORTAS, JANELAS, MOVEIS_<BLOCO> e CORTE_*), monta o JSON intermediário, valida,
 e escreve em --saida-dir:
   projeto.json          o JSON intermediário (confira os valores marcados 'inferida')
   script_sketchup.py    para colar em build_model (clean=true) do conector Trimble SketchUp
@@ -26,7 +26,8 @@ def main():
     ap.add_argument("--saida-dir", type=Path, required=True)
     ap.add_argument("--unidade", choices=sorted(UNIDADE_PARA_MM))
     ap.add_argument("--espessura", type=float, default=150.0)
-    ap.add_argument("--pe-direito", type=float, default=2700.0)
+    ap.add_argument("--pe-direito", type=float, default=None, help="padrão 2700; o corte, se houver, tem prioridade")
+    ap.add_argument("--corte", type=Path, help="DXF do corte (camadas CORTE_*); sem ele lê as camadas CORTE_* do próprio DXF")
     ap.add_argument("--calibracao", help="x1,y1,x2,y2,medida_mm (pontos nas unidades do DXF)")
     args = ap.parse_args()
 
@@ -39,7 +40,7 @@ def main():
             ap.error("--calibracao precisa de 5 números: x1,y1,x2,y2,medida_mm")
 
     try:
-        projeto, avisos = converter(args.dxf, args.unidade, args.espessura, args.pe_direito, calibracao)
+        projeto, avisos = converter(args.dxf, args.unidade, args.espessura, args.pe_direito, calibracao, args.corte)
     except ErroConversao as e:
         print(f"ERRO: {e}")
         return 1
