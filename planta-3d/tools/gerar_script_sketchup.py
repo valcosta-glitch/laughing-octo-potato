@@ -6,7 +6,7 @@ Uso: python3 gerar_script_sketchup.py projeto.json [saida.py]
 Lê o JSON intermediário (schema 0.1.0), valida, e escreve `projeto = {...}` e `moveis = [...]` (em mm)
 seguidos dos módulos de renderer/. Sem saída informada, imprime no stdout.
 
-Gera um script único (paredes, piso/porta/janela, móveis, cinco vistas e validação final) para um
+Gera um script único (paredes, piso/porta/janela, móveis, seis cenas e validação final) para um
 build_model com clean=true.
 
 Limites desta versão: usa só o primeiro pavimento; as paredes precisam estar na ordem do contorno

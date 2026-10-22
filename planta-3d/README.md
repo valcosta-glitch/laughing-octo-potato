@@ -15,7 +15,7 @@ renderer/sketchup_paredes.py   paredes com vãos de porta/janela (roda no sandbo
 renderer/sketchup_comum.py     funções compartilhadas (extrusão, prisma, validação de sólidos)
 renderer/sketchup_esquadrias.py piso, porta (batente + folha), janela (caixilho + vidro)
 renderer/sketchup_moveis.py    balcão e aéreo de 2 portas, peça a peça, com lista de corte
-renderer/sketchup_vistas.py    estilo técnico + 5 cenas ortográficas + câmera de abertura
+renderer/sketchup_vistas.py    estilo técnico + 5 cenas ortográficas + cena Interior de cima (perspectiva)
 renderer/sketchup_validacao.py confere que toda peça-folha é um sólido fechado
 tests/                         testes do conversor
 requirements.txt               ezdxf, jsonschema
@@ -78,15 +78,17 @@ O conector executa **Python** num sandbox (sem `import`, sem arquivos, unidade e
 python3 tools/gerar_script_sketchup.py exemplos/cozinha-simples.json script.py   # valida e monta tudo
 ```
 
-1. Cole `script.py` em `build_model` com `clean: true`. Ele desenha paredes, piso, porta, janela, móveis, cria as cinco cenas e termina com a validação.
-2. Resultado esperado para a cozinha de exemplo: `pecas_verificadas: 24`, `pecas_com_problema: []`, cinco cenas e a `lista_de_corte` dos móveis (15 chapas).
+1. Cole `script.py` em `build_model` com `clean: true`. Ele desenha paredes, piso, porta, janela, móveis, cria as seis cenas e termina com a validação.
+2. Resultado esperado para a cozinha de exemplo: `pecas_verificadas: 24`, `pecas_com_problema: []`, seis cenas e a `lista_de_corte` dos móveis (15 chapas).
 3. `save_model` devolve o `.skp`.
 
 O que é desenhado: paredes com cantos em esquadria; piso (laje de 100 mm); porta com batente e folha **fechada**; janela com caixilho e vidro; balcão e aéreo de 2 portas, uma chapa por subgrupo.
 
 **Medidas que o renderizador assume (não vêm do JSON, confira):** batente 40 mm, caixilho 40 mm, folha 35 mm, vidro 6 mm, piso 100 mm, fundo dos móveis 6 mm, zócalo recuado 50 mm, folga de porta 3 mm, tampo do balcão na mesma chapa do corpo (com 20 mm de avanço). Cores dos MDFs são fixas (as texturas do JSON ainda não são aplicadas).
 
-Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos fechados e as posições conferem com o JSON. A miniatura do `save_model` vem em base64 (`thumbnail_base64`) e pode ser decodificada para uma imagem; ela mostrou porta, janela com vidro, piso e, por dentro da janela, os móveis. Só a vista de abertura foi conferida assim: as cinco cenas ortográficas não foram vistas, abra o `.skp` para conferi-las. O link de download não é acessível a partir do ambiente de nuvem (política de rede).
+Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos fechados e as posições conferem com o JSON. A miniatura do `save_model` vem em base64 (`thumbnail_base64`) e pode ser decodificada para uma imagem; ela mostrou porta, janela com vidro, piso e, por dentro da janela, os móveis. A miniatura é uma vista fixa e **não** reflete as cenas nem a câmera do modelo, então as seis cenas não foram vistas. Para a cena "Interior de cima" conferi só a geometria da linha de visada (balcão, aéreo, centro do piso e parede do fundo ficam acima do topo da parede da frente; a faixa de piso junto a ela fica encoberta). Abra o `.skp` para conferir as cenas. O link de download não é acessível a partir do ambiente de nuvem (política de rede).
+
+Cenas: Planta, Frontal, Fundos, Lateral esquerda, Lateral direita (ortográficas) e **Interior de cima** (perspectiva a 58° de altura, olhando para dentro por cima da parede da frente). O arquivo abre em "Interior de cima".
 
 Limites: usa só o primeiro pavimento; só os blocos `balcao_2_portas` e `aereo_2_portas` têm desenho; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`); sem ferragens, puxadores, prateleiras nem furação.
 

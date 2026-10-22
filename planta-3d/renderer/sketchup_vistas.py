@@ -1,8 +1,8 @@
-# Estilo técnico + cinco cenas em projeção ortográfica para o conector Trimble SketchUp (build_model).
+# Estilo técnico + seis cenas (cinco ortográficas + interior de cima) para o conector Trimble SketchUp (build_model).
 #
 # Rodar DEPOIS de sketchup_paredes.py (precisa de geometria no modelo). Sem import, unidade em polegadas.
 # A caixa envolvente vem do próprio modelo. Cenas: Planta, Frontal, Fundos, Lateral esquerda e
-# Lateral direita; câmera de abertura em perspectiva 3/4.
+# Lateral direita e Interior de cima (perspectiva). O arquivo abre em Interior de cima.
 #
 # Convenção (Y+ = fundos do projeto): frontal olha de Y- para Y+, lateral direita olha de X+ para X-.
 # Limite: a "Planta" é vista de cima, sem plano de corte (o conector não expõe SectionPlane).
@@ -64,12 +64,38 @@ def altura_para(largura_necessaria, altura_necessaria):
     return max(altura_necessaria, largura_necessaria / ASPECT) * 1.25
 
 
+def distancia_para(dx, dy, dz, fov):
+    """Distância do olho ao centro da caixa para enquadrar a caixa inteira, olhando na direção -(dx, dy, dz)."""
+    rl = math.hypot(dx, dy)
+    rx, ry = -dy / rl, dx / rl
+    ux, uy, uz = -dz * ry, dz * rx, dx * ry - dy * rx
+    hext = abs(rx) * w + abs(ry) * d
+    vext = abs(ux) * w + abs(uy) * d + abs(uz) * h
+    vh = math.radians(fov / 2)
+    hh = math.atan(ASPECT * math.tan(vh))
+    return max((vext / 2) / math.tan(vh), (hext / 2) / math.tan(hh)) * 1.25
+
+
+def cam_persp(azimute, elevacao, fov, alvo_z):
+    """Perspectiva olhando para o centro da caixa. azimute: 0 = vindo de Y- (frente); positivo vai para X+."""
+    az, el = math.radians(azimute), math.radians(elevacao)
+    dx, dy, dz = math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)
+    dist = distancia_para(dx, dy, dz, fov)
+    c = Camera()
+    c.set_orientation(SUPoint3D(cx + dist * dx, cy + dist * dy, cz + dist * dz), SUPoint3D(cx, cy, alvo_z), UP_Z)
+    c.enable_perspective()
+    c.set_perspective_frustum_fov(fov)
+    return c
+
+
 vistas = [
     ("Planta", cam_orto(SUPoint3D(cx, cy, zmax + DIST), SUPoint3D(cx, cy, 0), SUVector3D(0, 1, 0), altura_para(w, d))),
     ("Frontal", cam_orto(SUPoint3D(cx, ymin - DIST, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(w, h))),
     ("Fundos", cam_orto(SUPoint3D(cx, ymax + DIST, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(w, h))),
     ("Lateral esquerda", cam_orto(SUPoint3D(xmin - DIST, cy, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(d, h))),
     ("Lateral direita", cam_orto(SUPoint3D(xmax + DIST, cy, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(d, h))),
+    # olha para dentro por cima da parede da frente; 58 graus de altura deixam ver o chão e a parede do fundo
+    ("Interior de cima", cam_persp(20.0, 58.0, 35.0, zmin + h * 0.25)),
 ]
 
 cenas = []
@@ -83,24 +109,9 @@ for s, (nome, cam) in zip(cenas, vistas):
     s.set_use_camera(True)
     s.set_camera(cam)
 
-# câmera de abertura: perspectiva 3/4, enquadrando a caixa inteira
-fov = 35.0
-az, el = math.radians(45), math.radians(30)
-dx, dy, dz = math.cos(az) * math.cos(el), -math.sin(az) * math.cos(el), math.sin(el)
-rl = math.hypot(dx, dy)
-rx, ry = -dy / rl, dx / rl
-ux, uy, uz = -dz * ry, dz * rx, dx * ry - dy * rx
-hext = abs(rx) * w + abs(ry) * d
-vext = abs(ux) * w + abs(uy) * d + abs(uz) * h
-vh = math.radians(fov / 2)
-hh = math.atan(ASPECT * math.tan(vh))
-dist = max((vext / 2) / math.tan(vh), (hext / 2) / math.tan(hh)) * 1.25
-hero = Camera()
-hero.set_orientation(SUPoint3D(cx + dist * dx, cy + dist * dy, cz + dist * dz), SUPoint3D(cx, cy, zmin + h * 0.4), UP_Z)
-hero.enable_perspective()
-hero.set_perspective_frustum_fov(fov)
-model.set_camera(hero)
-model.set_active_scene(cenas[0])
+# o arquivo abre na vista interna de cima (câmera do modelo = câmera da última cena)
+model.set_camera(vistas[-1][1])
+model.set_active_scene(cenas[-1])
 
 leitura = []
 for s in cenas:
