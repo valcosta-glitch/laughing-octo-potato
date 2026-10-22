@@ -1,8 +1,9 @@
 # Estilo técnico + seis cenas (cinco ortográficas + interior de cima) para o conector Trimble SketchUp (build_model).
 #
-# Rodar DEPOIS de sketchup_paredes.py (precisa de geometria no modelo). Sem import, unidade em polegadas.
+# Rodar DEPOIS de sketchup_paredes.py (precisa de geometria no modelo; o contexto em session_state["ctx"]
+# é opcional: sem ele a parede da frente não é ocultada). Sem import, unidade em polegadas.
 # A caixa envolvente vem do próprio modelo. Cenas: Planta, Frontal, Fundos, Lateral esquerda e
-# Lateral direita e Interior de cima (perspectiva). O arquivo abre em Interior de cima.
+# Lateral direita e Interior de cima (perspectiva). O arquivo abre em Interior de cima, que oculta a parede da frente.
 #
 # Convenção (Y+ = fundos do projeto): frontal olha de Y- para Y+, lateral direita olha de X+ para X-.
 # Limite: a "Planta" é vista de cima, sem plano de corte (o conector não expõe SectionPlane).
@@ -50,6 +51,8 @@ w, d, h = xmax - xmin, ymax - ymin, zmax - zmin
 ASPECT = 1.6
 DIST = 4.0 * max(w, d, h)
 UP_Z = SUVector3D(0, 0, 1)
+AZ_INTERNA = 10.0
+EL_INTERNA = 40.0
 
 
 def cam_orto(eye, target, up, altura_visivel):
@@ -94,8 +97,9 @@ vistas = [
     ("Fundos", cam_orto(SUPoint3D(cx, ymax + DIST, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(w, h))),
     ("Lateral esquerda", cam_orto(SUPoint3D(xmin - DIST, cy, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(d, h))),
     ("Lateral direita", cam_orto(SUPoint3D(xmax + DIST, cy, cz), SUPoint3D(cx, cy, cz), UP_Z, altura_para(d, h))),
-    # olha para dentro por cima da parede da frente; 58 graus de altura deixam ver o chão e a parede do fundo
-    ("Interior de cima", cam_persp(20.0, 58.0, 35.0, zmin + h * 0.25)),
+    # a parede da frente é ocultada só nesta cena; 10 graus de azimute e 40 de altura mantêm o olho
+    # dentro da parede leste (azimute maior com altura menor o colocaria atrás dela)
+    ("Interior de cima", cam_persp(AZ_INTERNA, EL_INTERNA, 35.0, zmin + h * 0.25)),
 ]
 
 cenas = []
@@ -108,6 +112,39 @@ model.add_scenes(cenas)  # antes de configurar
 for s, (nome, cam) in zip(cenas, vistas):
     s.set_use_camera(True)
     s.set_camera(cam)
+
+# parede da frente = a que fica entre a câmera interna e o ambiente (maior produto escalar entre a
+# normal externa da parede e a direção horizontal do olho). Some com as esquadrias dela, só na cena interna.
+ctx_vistas = session_state.get("ctx")
+oculta = None
+if ctx_vistas is not None:
+    olho_x, olho_y = math.sin(math.radians(AZ_INTERNA)), -math.cos(math.radians(AZ_INTERNA))
+    frente = None
+    melhor = -2.0
+    for wv in ctx_vistas["paredes"]:
+        dot = -wv["nrm"][0] * olho_x - wv["nrm"][1] * olho_y   # normal externa = -nrm
+        if dot > melhor:
+            melhor = dot
+            frente = wv
+    nomes_ocultos = ["Parede_" + frente["id"]]
+    for ab in ctx_vistas["abs"].get(frente["id"], []):
+        nomes_ocultos.append(("Porta_" if ab["tipo"] == "porta" else "Janela_") + ab["id"])
+    oculta = Layer()
+    oculta.set_name("Parede_da_frente")
+    model.add_layers([oculta])
+    pai = None
+    for g in model.get_entities().get_groups():
+        if g.get_name() == ctx_vistas["nome"]:
+            pai = g
+    for g in pai.get_entities().get_groups():
+        if g.get_name() in nomes_ocultos:
+            g.set_layer(oculta)
+
+# toda cena grava a visibilidade das etiquetas; senão herdaria o estado da cena anterior
+for s in cenas:
+    s.set_use_hidden_layers(True)
+if oculta is not None:
+    cenas[-1].add_layer(oculta)   # add_layer = OCULTAR nesta cena
 
 # o arquivo abre na vista interna de cima (câmera do modelo = câmera da última cena)
 model.set_camera(vistas[-1][1])
