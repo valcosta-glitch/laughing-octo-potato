@@ -41,9 +41,9 @@ def converter(seed, rotacao=0, estilo="preenchido"):
 
 class TestGeometria(unittest.TestCase):
     def test_aberturas_e_dimensoes_sem_giro(self):
-        for seed in SEMENTES:
-            with self.subTest(seed=seed):
-                gab, projeto, _ = converter(seed)
+        for estilo, seed in [("preenchido", s) for s in SEMENTES] + [("contorno", s) for s in range(1, 5)]:
+            with self.subTest(estilo=estilo, seed=seed):
+                gab, projeto, _ = converter(seed, estilo=estilo)
                 pav = projeto["pavimentos"][0]
                 W, D, xi = gab["largura_eixos_mm"], gab["profundidade_eixos_mm"], gab["parede_interna_x_mm"]
                 # origem do JSON = canto inferior esquerdo dos pilares (100 mm além do eixo dos cantos)
@@ -120,7 +120,12 @@ class TestSaida(unittest.TestCase):
 
 
 class TestRecusas(unittest.TestCase):
-    def test_linha_dupla_sem_preenchimento_e_recusada_com_erro_claro(self):
+    def test_modo_contorno_e_detectado_sozinho_e_avisa(self):
+        _, projeto, avisos = converter(2, estilo="contorno")
+        self.assertTrue(any("CONTORNOS" in a for a in avisos), avisos)
+        self.assertEqual(len(projeto["pavimentos"][0]["vaos"]), 3)
+
+    def test_linha_dupla_solta_e_recusada_com_erro_claro(self):
         with self.assertRaises(ext.ErroPDF) as cm:
             converter(4, estilo="linha_dupla")
         self.assertIn("linha dupla", str(cm.exception))

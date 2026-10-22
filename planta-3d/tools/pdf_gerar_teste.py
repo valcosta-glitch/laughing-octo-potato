@@ -6,7 +6,9 @@ Uso: python3 pdf_gerar_teste.py --seed 3 --saida-dir saida [--rotacao 0|90|180|2
 Escreve planta.pdf e gabarito.json. Escala 1:50 (texto "ESC. 1:50" na folha, A3 retrato).
 Estilo 'preenchido': paredes como retângulos cinza (0,5) fatiados como o CAD faz, pilares laranja nos 4 cantos,
 vãos com linhas de batente, porta = folha (retângulo fino perpendicular), janela = 3 linhas paralelas.
-Estilo 'linha_dupla': só contornos (sem preenchimento), para conferir que o extrator RECUSA com erro claro.
+Estilo 'contorno': cada peça de parede é uma polilinha FECHADA de traço 1,08 pt (face externa e interna), sem preenchimento
+(o CAD de layouts de interiores); o extrator lê pela paridade dos contornos.
+Estilo 'linha_dupla': as duas faces como linhas SOLTAS (sem formar polígono), para conferir que o extrator RECUSA com erro claro.
 
 Planta: retângulo externo, uma parede interna vertical em T com uma porta, 1 janela e 1 porta externas.
 A semente define dimensões e posições dos vãos. Alturas NÃO existem na planta (como nos PDFs reais).
@@ -63,6 +65,19 @@ def gerar(seed, destino, rotacao=0, estilo="preenchido"):
     def linha(x0, y0, x1, y1, w=0.48):
         pg.draw_line(P(x0, y0), P(x1, y1), color=(0, 0, 0), width=w)
 
+    def peca(x0, y0, x1, y1):
+        if estilo == "preenchido":
+            ret(x0, y0, x1, y1, color=CINZA, fill=CINZA, width=0)
+        elif estilo == "contorno":
+            pg.draw_polyline([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1), P(x0, y0)], color=(0, 0, 0), width=1.08, closePath=True)
+        else:
+            if x1 - x0 >= y1 - y0:
+                linha(x0, y0, x1, y0, 1.44)
+                linha(x0, y1, x1, y1, 1.44)
+            else:
+                linha(x0, y0, x0, y1, 1.44)
+                linha(x1, y0, x1, y1, 1.44)
+
     def parede_h(c, a, b, ab):
         """Parede horizontal na linha y=c, de x=a a x=b, com aberturas ab=[(s0, s1, tipo)] (x em mm)."""
         marcos = [a]
@@ -71,11 +86,7 @@ def gerar(seed, destino, rotacao=0, estilo="preenchido"):
         marcos.append(b)
         for i in range(0, len(marcos), 2):
             if marcos[i + 1] > marcos[i]:
-                if estilo == "preenchido":
-                    ret(marcos[i], c - ESP / 2, marcos[i + 1], c + ESP / 2, color=CINZA, fill=CINZA, width=0)
-                else:
-                    linha(marcos[i], c - ESP / 2, marcos[i + 1], c - ESP / 2, 1.44)
-                    linha(marcos[i], c + ESP / 2, marcos[i + 1], c + ESP / 2, 1.44)
+                peca(marcos[i], c - ESP / 2, marcos[i + 1], c + ESP / 2)
         for s0, s1, tipo in ab:
             linha(s0, c - ESP / 2, s0, c + ESP / 2, 0.84)
             linha(s1, c - ESP / 2, s1, c + ESP / 2, 0.84)
@@ -94,11 +105,7 @@ def gerar(seed, destino, rotacao=0, estilo="preenchido"):
         marcos.append(b)
         for i in range(0, len(marcos), 2):
             if marcos[i + 1] > marcos[i]:
-                if estilo == "preenchido":
-                    ret(c - ESP / 2, marcos[i], c + ESP / 2, marcos[i + 1], color=CINZA, fill=CINZA, width=0)
-                else:
-                    linha(c - ESP / 2, marcos[i], c - ESP / 2, marcos[i + 1], 1.44)
-                    linha(c + ESP / 2, marcos[i], c + ESP / 2, marcos[i + 1], 1.44)
+                peca(c - ESP / 2, marcos[i], c + ESP / 2, marcos[i + 1])
         for s0, s1, tipo in ab:
             linha(c - ESP / 2, s0, c + ESP / 2, s0, 0.84)
             linha(c - ESP / 2, s1, c + ESP / 2, s1, 0.84)
@@ -118,7 +125,7 @@ def gerar(seed, destino, rotacao=0, estilo="preenchido"):
     parede_v(0, ESP / 2, D - ESP / 2, [])
     parede_v(W, ESP / 2, D - ESP / 2, [])
     parede_v(xi, ESP / 2, D - ESP / 2, por_linha["interna"])
-    if estilo == "preenchido":
+    if estilo in ("preenchido", "contorno"):
         for x, y in ((0, 0), (W, 0), (0, D), (W, D)):
             ret(x - PILAR / 2, y - PILAR / 2, x + PILAR / 2, y + PILAR / 2, color=LARANJA, fill=LARANJA, width=0)
     pg.insert_text((ox, oy + D * PT_POR_MM + 80), "PLANTA BAIXA  ESC. 1:50", fontsize=10)
@@ -135,7 +142,7 @@ def main():
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--saida-dir", type=Path, required=True)
     ap.add_argument("--rotacao", type=int, default=0, choices=[0, 90, 180, 270])
-    ap.add_argument("--estilo", choices=["preenchido", "linha_dupla"], default="preenchido")
+    ap.add_argument("--estilo", choices=["preenchido", "contorno", "linha_dupla"], default="preenchido")
     args = ap.parse_args()
     args.saida_dir.mkdir(parents=True, exist_ok=True)
     gab = gerar(args.seed, args.saida_dir / "planta.pdf", args.rotacao, args.estilo)

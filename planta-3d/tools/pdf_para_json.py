@@ -87,10 +87,11 @@ def aparar_sobreposicoes(paredes, g, minimo=10.0):
     return aparadas, restam
 
 
-def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None, pe_direito=None, grade_mm=5.0, ajustes=None):
+def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None, pe_direito=None, grade_mm=5.0, ajustes=None,
+                  estilo="auto", traco=None):
     """Retorna (projeto, avisos, r, a): projeto = JSON intermediário; r e a = extração, para o overlay."""
     ajustes = ajustes or {}
-    r = montar(pdf, escala=escala, regiao=regiao, cor_parede=cor_parede, cor_pilar=cor_pilar)
+    r = montar(pdf, escala=escala, regiao=regiao, cor_parede=cor_parede, cor_pilar=cor_pilar, estilo=estilo, traco=traco)
     a = analisar(r)
     avisos = list(r["avisos"])
     mm_px, T = r["mm_px"], r["T"]
@@ -153,8 +154,8 @@ def converter_pdf(pdf, escala=None, regiao=None, cor_parede=None, cor_pilar=None
         peit = aj.get("peitoril_mm", 0 if tipo == "porta" else JANELA_PEITORIL)
         inferida = "altura_mm" not in aj
         altura_inferida += inferida
-        ev = (f"{v['paralelas']} linhas paralelas na faixa da parede" if tipo == "janela"
-              else f"folha de porta ({v['folhas']}) e linhas de batente {v['batentes']}")
+        ev = (f"{v['paralelas']} linhas paralelas na faixa da parede; batentes {v['batentes']}" if tipo == "janela"
+              else f"folha de porta ({v['folhas']}), arco de giro ({v['arcos']}) e linhas de batente {v['batentes']}")
         vaos.append({"id": f"v{n}", "tipo": tipo, "eixo": eixo, "centro": centro, "largura_mm": larg,
                      "espessura_mm": esp, "altura_mm": alt, "peitoril_mm": peit,
                      "origem": "medida" if not inferida else "inferida",
@@ -205,6 +206,9 @@ def main():
     ap.add_argument("--regiao", help="x0,y0,x1,y1 em pontos do PDF")
     ap.add_argument("--cor-parede")
     ap.add_argument("--cor-pilar")
+    ap.add_argument("--estilo", choices=["auto", "preenchido", "contorno"], default="auto",
+                    help="preenchido: paredes são polígonos cheios; contorno: face externa e interna em polilinhas aninhadas")
+    ap.add_argument("--traco", type=float, help="espessura do traço dos contornos de parede (pt); padrão: automático")
     ap.add_argument("--pe-direito", type=float)
     ap.add_argument("--grade-mm", type=float, default=5.0)
     ap.add_argument("--ajustes", type=Path)
@@ -214,7 +218,8 @@ def main():
     regiao = tuple(float(v) for v in args.regiao.split(",")) if args.regiao else None
     try:
         projeto, avisos, r, a = converter_pdf(args.pdf, args.escala, regiao, _cor(args.cor_parede) if args.cor_parede else None,
-                                              _cor(args.cor_pilar) if args.cor_pilar else None, args.pe_direito, args.grade_mm, ajustes)
+                                              _cor(args.cor_pilar) if args.cor_pilar else None, args.pe_direito, args.grade_mm, ajustes,
+                                              args.estilo, args.traco)
     except ErroPDF as e:
         print(f"ERRO: {e}")
         return 1

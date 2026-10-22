@@ -35,6 +35,7 @@ from PIL import Image, ImageDraw
 PX_POR_PT = 4                 # resolução da máscara: 0,25 pt/px (~4,4 mm em 1:50)
 ESP_MIN_MM = 80.0
 ESP_MAX_MM = 350.0
+FINA_CONTORNO = 0.45         # idem, no modo contorno
 FINA_FRAC = 0.7               # trecho mais fino que isto x espessura = parede rebaixada (vira vão)
 VAO_MIN_MM = 300.0
 VAO_MAX_MM = 4000.0
@@ -134,7 +135,8 @@ def _recorta(r, regiao):
     if regiao is None:
         return True
     x0, y0, x1, y1 = regiao
-    return r.x0 >= x0 - 1 and r.x1 <= x1 + 1 and r.y0 >= y0 - 1 and r.y1 <= y1 + 1
+    cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2       # pelo centro: um contorno que atravessa a borda da região entra inteiro
+    return x0 - 1 <= cx <= x1 + 1 and y0 - 1 <= cy <= y1 + 1
 
 
 def escolher_cor_parede(desenhos, escala, regiao):
@@ -169,6 +171,48 @@ def mascara_de(desenhos, cor, regiao, caixa):
             dr.polygon([((x - x0) * K, (y - y0) * K) for x, y in poly], fill=255)
         n += 1
     return np.asarray(img) > 127, n
+
+
+def escolher_traco_parede(desenhos, regiao):
+    """Espessura de traço dos CONTORNOS de parede: entre os traços grossos (>= 0,9 pt) o de maior comprimento
+    total de polilinhas. Plantas sem preenchimento desenham a face externa e a interna da parede como
+    polilinhas aninhadas; o traço delas é o mais grosso e longo da folha."""
+    comp = {}
+    for d in desenhos:
+        w = d.get("width") or 0
+        if d.get("color") is None or w < 0.9 or not _recorta(d["rect"], regiao):
+            continue
+        L = 0.0
+        for it in d["items"]:
+            if it[0] == "l":
+                L += abs(it[1].x - it[2].x) + abs(it[1].y - it[2].y)
+            elif it[0] == "re":
+                L += 2 * (it[1].width + it[1].height)
+            elif it[0] == "qu":
+                L += 2 * (it[1].rect.width + it[1].rect.height)
+        if len(d["items"]) >= 6 or L > 60:         # polilinhas longas, não tracinhos de símbolo
+            comp[round(w, 2)] = comp.get(round(w, 2), 0.0) + L
+    return max(comp, key=comp.get) if comp else None
+
+
+def mascara_contornos(desenhos, largura, regiao, caixa):
+    """Paridade (par/ímpar) dos polígonos de todas as polilinhas de traço `largura`: o anel entre a face externa
+    e a interna de cada parede fica preenchido. Polilinhas abertas fecham em linha reta (deixa fios diagonais
+    finos, que a limpeza por espessura remove)."""
+    x0, y0, x1, y1 = caixa
+    K = PX_POR_PT
+    W, H = int((x1 - x0) * K) + 2, int((y1 - y0) * K) + 2
+    par = np.zeros((H, W), dtype=bool)
+    n = 0
+    for d in desenhos:
+        if abs((d.get("width") or 0) - largura) > 0.06 or d.get("color") is None or not _recorta(d["rect"], regiao):
+            continue
+        for poly in _poligonos(d["items"]):
+            im = Image.new("L", (W, H), 0)
+            ImageDraw.Draw(im).polygon([((x - x0) * K, (y - y0) * K) for x, y in poly], fill=255)
+            par ^= np.asarray(im) > 127
+            n += 1
+    return par, n
 
 
 def comprimento_corridas(m, eixo):
@@ -213,18 +257,22 @@ def espessura_tipica_px(m):
     esp = np.minimum(hr, vr)[m]
     esp = esp[esp >= 4]
     if esp.size == 0:
-        raise ErroPDF("máscara de paredes vazia")
+        raise ErroPDF("máscara de paredes vazia: os traços grossos não formam contornos fechados (paredes em linha dupla SOLTA, sem polígono, ainda não são suportadas)")
     cont = np.bincount(esp)
     # moda suavizada em janela de 3 px (o desenho tem variações de ~0,3 pt)
     suave = np.convolve(cont, np.ones(3), mode="same")
     return int(np.argmax(suave)), hr, vr
 
 
-def decompor(m):
+def decompor(m, contorno=False):
     """Peças retas da máscara. Cada peça: dict(orient, c0, c1, a0, a1) em pixels (meio aberto, [a0, a1) ao longo)."""
     T, hr, vr = espessura_tipica_px(m)
+    if contorno:       # fios diagonais do fechamento implícito de polilinhas abertas: corridas curtas nos dois sentidos
+        m = m & (np.maximum(hr, vr) >= 0.6 * T)
+        hr, vr = comprimento_corridas(m, 1), comprimento_corridas(m, 0)
     # fino = estreito E comprido (parede rebaixada sob janela); toco curto e gordo continua sendo parede
-    fina = (np.minimum(hr, vr) < FINA_FRAC * T) & (np.maximum(hr, vr) >= 1.5 * T)
+    frac = FINA_CONTORNO if contorno else FINA_FRAC      # contorno: divisórias de 125 mm convivem com paredes de 190 mm
+    fina = (np.minimum(hr, vr) < frac * T) & (np.maximum(hr, vr) >= 1.5 * T)
     solido = m & ~fina
     hr, vr = comprimento_corridas(solido, 1), comprimento_corridas(solido, 0)
     horiz = solido & (hr >= vr)
@@ -237,6 +285,9 @@ def decompor(m):
                 migalhas += 1
                 continue
             cheio = len(ys) / float((y1 - y0) * (x1 - x0))
+            if contorno and cheio < 0.7:
+                migalhas += 1
+                continue
             pecas.append({"orient": orient, "x0": int(x0), "x1": int(x1), "y0": int(y0), "y1": int(y1), "cheio": round(cheio, 3)})
     return T, _absorver_tampas(pecas, T), migalhas, solido
 
@@ -274,7 +325,7 @@ def _absorver_tampas(pecas, T, tol=None):
     return pecas
 
 
-def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar=None):
+def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar=None, estilo="auto", traco=None):
     doc = pymupdf.open(pdf)
     pg = doc[pagina_n - 1]
     avisos = []
@@ -288,18 +339,31 @@ def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar
     desenhos = pg.get_drawings()
     if pg.rotation:
         desenhos = _girar_desenhos(desenhos, pg.rotation_matrix)
-    cor = cor_parede or escolher_cor_parede(desenhos, escala, regiao)
+    cor = None if estilo == "contorno" else (cor_parede or escolher_cor_parede(desenhos, escala, regiao))
+    largura_traco = None
     if cor is None:
-        raise ErroPDF("nenhum preenchimento parece parede (faixas alongadas de 80 a 350 mm). "
-                      "Paredes em linha dupla sem preenchimento ainda não são suportadas.")
+        if estilo == "preenchido":
+            raise ErroPDF("nenhum preenchimento parece parede (faixas alongadas de 80 a 350 mm).")
+        largura_traco = traco if traco is not None else escolher_traco_parede(desenhos, regiao)
+        if largura_traco is None:
+            raise ErroPDF("nenhum preenchimento nem contorno grosso parece parede (faixas de 80 a 350 mm, "
+                          "ou polilinhas de traço >= 0,9 pt).")
+        avisos.append(f"paredes lidas como CONTORNOS aninhados (traço {largura_traco} pt): a região entre a face externa "
+                      "e a interna é a parede; confira o overlay (escadas, muros e contornos de varanda podem entrar).")
     if regiao:
         caixa = tuple(regiao)
     else:                       # caixa das paredes (e pilares) + margem: máscara menor, extração mais rápida
-        cores = {cor} | ({tuple(cor_pilar)} if cor_pilar else set())
-        rs = [d["rect"] for d in desenhos if _cor(d.get("fill")) in cores]
+        if largura_traco is not None:
+            rs = [d["rect"] for d in desenhos if abs((d.get("width") or 0) - largura_traco) <= 0.06 and d.get("color") is not None]
+        else:
+            cores = {cor} | ({tuple(cor_pilar)} if cor_pilar else set())
+            rs = [d["rect"] for d in desenhos if _cor(d.get("fill")) in cores]
         caixa = (max(0.0, min(r.x0 for r in rs) - 4), max(0.0, min(r.y0 for r in rs) - 4),
                  min(pg.rect.width, max(r.x1 for r in rs) + 4), min(pg.rect.height, max(r.y1 for r in rs) + 4))
-    m, n_poly = mascara_de(desenhos, cor, regiao, caixa)
+    if largura_traco is not None:
+        m, n_poly = mascara_contornos(desenhos, largura_traco, regiao, caixa)
+    else:
+        m, n_poly = mascara_de(desenhos, cor, regiao, caixa)
     mm_pt = PT_MM_1 * escala
     mm_px = mm_pt / PX_POR_PT
 
@@ -313,7 +377,7 @@ def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar
             pilares.append({"x0": int(xs.min()), "x1": int(xs.max()) + 1, "y0": int(ys.min()), "y1": int(ys.max()) + 1})
         m = m & ~mp
 
-    T, pecas, migalhas, solido = decompor(m)
+    T, pecas, migalhas, solido = decompor(m, contorno=largura_traco is not None)
     esp_mm = T * mm_px
     if not ESP_MIN_MM <= esp_mm <= ESP_MAX_MM:
         avisos.append(f"espessura típica {esp_mm:.0f} mm fora de 80–350 mm: confira a escala (1:{escala})")
@@ -323,7 +387,7 @@ def montar(pdf, pagina_n=1, escala=None, regiao=None, cor_parede=None, cor_pilar
         for p in pecas:
             cob[p["y0"]:p["y1"], p["x0"]:p["x1"]] = True
         cobertura = float((cob & m).sum()) / float(m.sum())
-    return {"doc": doc, "pagina": pg, "desenhos": desenhos, "escala": escala, "cor": cor, "n_poly": n_poly, "caixa": caixa,
+    return {"doc": doc, "pagina": pg, "desenhos": desenhos, "escala": escala, "cor": cor, "largura_traco": largura_traco, "n_poly": n_poly, "caixa": caixa,
             "m": m, "solido": solido, "T": T, "pecas": pecas, "migalhas": migalhas, "pilares": pilares, "mm_px": mm_px,
             "cobertura": cobertura, "avisos": avisos, "mm_pt": mm_pt}
 
@@ -335,7 +399,10 @@ def _vertices_vetoriais(r):
     x0, y0 = r["caixa"][0], r["caixa"][1]
     xs, ys = [], []
     for d in r["desenhos"]:
-        if _cor(d.get("fill")) != r["cor"] or not _recorta(d["rect"], None):
+        if r["largura_traco"] is not None:
+            if abs((d.get("width") or 0) - r["largura_traco"]) > 0.06 or d.get("color") is None:
+                continue
+        elif _cor(d.get("fill")) != r["cor"] or not _recorta(d["rect"], None):
             continue
         for poly in _poligonos(d["items"]):
             for x, y in poly:
@@ -365,6 +432,8 @@ def analisar(r):
             if 0.8 * T <= c <= 1.25 * T:
                 curtas.append(c)
     Tv = float(np.median(curtas)) if curtas else float(T)
+    if r["largura_traco"] is not None:
+        Tv = float(T)        # contornos: sem retângulo de parede para medir; a espessura vem do pico da máscara
 
     pecas = []
     for p in r["pecas"]:
@@ -516,8 +585,30 @@ def analisar(r):
                         pontas[0] += 1
                     if abs(pos - fim) <= 6.0:
                         pontas[1] += 1
-        v["paralelas"], v["folhas"], v["batentes"] = par, folhas, pontas
-        v["tipo_sugerido"] = "janela" if par >= 3 else ("porta" if folhas and wpt * mm_pt_ <= PORTA_MAX_MM else None)
+        # arco de giro da porta: curvas cujo conjunto tem tamanho ~ largura do vão e encosta na faixa
+        arcos = 0
+        for d in r["desenhos"]:
+            pts = [(q.x, q.y) for it in d["items"] if it[0] == "c" for q in it[1:5]]
+            if not pts:
+                continue
+            cxs, cys = [q[0] for q in pts], [q[1] for q in pts]
+            if not 0.6 * wpt <= max(max(cxs) - min(cxs), max(cys) - min(cys)) <= 1.5 * wpt:
+                continue
+            if max(cxs) < band[0] - 6 or min(cxs) > band[2] + 6 or max(cys) < band[1] - 6 or min(cys) > band[3] + 6:
+                continue
+            arcos += 1
+        v["paralelas"], v["folhas"], v["batentes"], v["arcos"] = par, folhas, pontas, arcos
+    exige_arco = sum(1 for v in vaos if v["arcos"] >= 1) >= 2       # o desenho usa arco de giro: folha sozinha não basta
+    for v in vaos:
+        wmm = (v["a1"] - v["a0"]) * mm_px
+        if v["arcos"] >= 1 and wmm <= PORTA_MAX_MM:
+            v["tipo_sugerido"] = "porta"
+        elif v["paralelas"] >= 3 or (v["paralelas"] >= 2 and min(v["batentes"]) >= 1):
+            v["tipo_sugerido"] = "janela"
+        elif v["folhas"] and wmm <= PORTA_MAX_MM and not exige_arco:
+            v["tipo_sugerido"] = "porta"
+        else:
+            v["tipo_sugerido"] = None
     descartados = [v for v in vaos if v["tipo_sugerido"] is None]
     vaos = [v for v in vaos if v["tipo_sugerido"] is not None]
     return {"Tv": Tv, "pecas": pecas, "vaos": vaos, "descartados": descartados}
