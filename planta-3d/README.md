@@ -151,7 +151,7 @@ python3 tools/pdf_para_json.py planta.pdf --escala 50 --altura-porta 2100 --topo
 #   ou no arquivo de ajustes:  {"padroes": {"altura_porta_mm": 2100, "topo_janela_mm": 2100, "peitoril_janela_mm": 1000}}
 ```
 
-Portas ficam `origem: "usuario"` (confiança 1,0). Janela só vira `usuario` se você informar o topo **e** o peitoril; com só o topo, a altura é `topo − peitoril` (peitoril padrão 1000 mm), a janela continua `inferida` (confiança 0,5) e o aviso diz que o peitoril não foi informado. Ordem de precedência: ajuste por vão > corte > padrões informados > padrão do programa. Topo abaixo do peitoril é recusado. No Guarajuba: portas 2100 mm e janelas de 1000 a 2100 mm (verificado no SketchUp: topo das 7 portas do superior e das janelas = 2100).
+Portas ficam `origem: "usuario"` (confiança 1,0). Janela só vira `usuario` se você informar o topo **e** o peitoril; com só o topo, a altura é `topo − peitoril` (peitoril padrão 1000 mm), a janela continua `inferida` (confiança 0,5) e o aviso diz que o peitoril não foi informado. Ordem de precedência: ajuste por vão > corte > padrões informados > padrão do programa. Topo abaixo do peitoril é recusado. Com os três informados (portas 2100; janelas de 1000 a 2100 mm), tudo vira `usuario` com confiança 1,0. Valores confirmados pelo usuário: peitoril 1,00 m e topo das janelas = topo das portas = 2,10 m nas duas casas; pé-direito 2,60 m na casa de 3 quartos (Planta 1); Guarajuba 2,55 m (térreo) e 2,62 m (superior), lidos das pranchas de marcenaria. Verificado no SketchUp: topo de todas as portas e janelas = 2100 mm.
 
 ### Altura e peitoril pelo corte (`--corte`)
 
