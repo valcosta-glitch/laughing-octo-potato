@@ -10,6 +10,10 @@ exemplos/cozinha-simples.json  cozinha 4,00 x 3,00 m com porta, janela, balcão,
 exemplos/*.dxf                 cozinha-planta, cozinha-corte (separado) e sala-L-planta (corte no mesmo arquivo)
 tools/validar.py               valida esquema + coerência geométrica
 tools/planta_para_skp.py       DA PLANTA DXF AO SCRIPT DO SKETCHUP, num comando (começa por aqui)
+tools/imagem_extrair.py        IMAGEM da planta -> paredes e vãos em pixels (visão computacional clássica)
+tools/imagem_classificar_claude.py  etapa de I.A.: classifica os vãos e lê a escala (API NÃO executada)
+tools/imagem_para_json.py      extração + classificação -> JSON intermediário e script do SketchUp
+tools/imagem_gerar_teste.py    gera plantas sintéticas (imagem + gabarito) para testar a leitura
 tools/dxf_para_json.py         converte uma planta DXF simples neste JSON
 tools/gerar_dxf_exemplo.py     gera exemplos/cozinha-planta.dxf e exemplos/sala-L-planta.dxf
 tools/gerar_script_sketchup.py JSON -> script para o conector Trimble SketchUp
@@ -81,6 +85,47 @@ Testado de ponta a ponta com a cozinha (mm, com corte em arquivo separado: pé-d
 
 O validador recusa móveis sobrepostos na mesma parede e avisa quando um móvel cruza uma porta ou janela.
 
+## Da imagem da planta ao SketchUp
+
+Para foto, scan ou PDF rasterizado de uma planta. O desenho é dividido de propósito: **a geometria não vem da I.A.**, porque modelos de linguagem estimam coordenadas em pixels com erro de dezenas de pixels. A I.A. entra só no que ela faz bem (semântica).
+
+```
+imagem ──► imagem_extrair.py ──► extracao.json + overlay.png      (paredes e vãos em pixels; visão computacional clássica)
+                                        │
+overlay.png + extracao.json ──► I.A. (ou pessoa) ──► classificacao.json   (porta/janela de cada vão numerado; a cota escrita → escala)
+                                        │
+extracao.json + classificacao.json ──► imagem_para_json.py ──► projeto.json + script_sketchup.py   (mesmo conversor e validador do DXF)
+```
+
+```bash
+python3 tools/imagem_extrair.py planta.png --saida-dir saida            # gera saida/extracao.json e saida/overlay.png
+# classificação: pela I.A. (tools/imagem_classificar_claude.py) ou à mão, num classificacao.json:
+#   {"calibracao": {"parede": 1, "referencia": "externa", "medida_mm": 5400, "origem": "cota lida: 5,40 m"},
+#    "aberturas": {"1": "janela", "2": "janela", "3": "porta"}, "ambiente": "SALA"}
+python3 tools/imagem_para_json.py saida/extracao.json classificacao.json --saida-dir saida2
+```
+
+**O que a extração faz.** Separa o que é parede (faixa escura sólida, grossa e longa, na horizontal ou vertical) do traço fino (arco e folha de porta, cota, texto, móveis). Os vãos são as interrupções de uma parede; os cantos viram o cruzamento dos eixos. A imagem é desinclinada automaticamente (até ±4°). O comprimento mínimo de parede acompanha a espessura estimada.
+
+**Precisão medida** (plantas sintéticas com gabarito, 24 por linha, paredes de 15 px a 100 px/m):
+
+| Condição | Plantas lidas certo | Erro máx. de parede | Erro máx. de posição do vão | Erro máx. de largura do vão |
+|---|---|---|---|---|
+| limpa | 24/24 | 0 mm | 10 mm | 0 mm |
+| ruído + desfoque + JPEG | 24/24 | 0 mm | 10 mm | 0 mm |
+| girada 1,5° | 24/24 | 0 mm | 10 mm | 10 mm |
+| girada −2° + ruído/JPEG | 24/24 | 0 mm | 10 mm | 0 mm |
+| meia resolução (50 px/m) | 24/24 | 20 mm | 22 mm | 20 mm |
+| 1/3 da resolução (33 px/m) | **10/24** | 30 mm | 45 mm | 40 mm |
+
+O erro de 10 mm é 1 pixel nessa escala. **Em 33 px/m a leitura falha em mais da metade, e parte das falhas é silenciosa (um vão some)**: por isso há avisos explícitos de resolução (parede com menos de 10 px; "RESOLUÇÃO MUITO BAIXA" com menos de 6 px; escala a partir de 15 mm/px). Use imagem com a parede de **pelo menos 8 a 10 px** de espessura e confira o `overlay.png`.
+
+**Avaliação "cega" da etapa de I.A.** Três plantas novas (sementes nunca vistas, uma em L com ruído e JPEG); a classificação foi feita só olhando as imagens, antes de abrir o gabarito: 9 de 9 vãos com tipo, largura e posição certos (≤ 10 mm), escala lida da cota certa. Quem classificou foi o próprio Claude desta sessão, não a chamada de API do repositório, que **não foi executada** (usaria a `ANTHROPIC_API_KEY` do ambiente, sem autorização); só a parte offline dela (montar o prompt, interpretar e validar a resposta) é testada. Rode `tools/imagem_classificar_claude.py` uma vez numa planta conhecida antes de confiar.
+
+**Onde quebra (testado):** paredes desenhadas em linha dupla (contorno oco) ou hachuradas dão **erro claro**, não resultado errado; o traço claro em cinza funciona. Ainda não suporta: paredes inclinadas (só horizontais/verticais), mais de um contorno, espessuras diferentes entre paredes, paredes que se encontram em T, móveis (não são lidos da imagem), cota que não esteja escrita na imagem (a escala vem só de uma cota lida ou de uma medida informada).
+
+**O que as imagens deste teste NÃO provam.** São sintéticas e limpas: traço preto sólido, símbolos padronizados. Plantas reais têm legendas sobre as paredes, hachuras, vários estilos de porta e janela, escalas gráficas e carimbos. Os números acima mostram que o algoritmo faz o que se propõe nesse caso, não que lê qualquer planta.
+
 ## Converter um DXF (só até o JSON)
 
 ```bash
@@ -128,6 +173,7 @@ Limites: usa só o primeiro pavimento; só os três blocos acima têm desenho; a
 ## Limitações conhecidas (versão 0.1.0)
 
 - O conversor aceita um único contorno fechado. Móveis só encostados numa parede e alinhados a ela (sem canto em L de móveis, ilhas nem móveis girados). Várias peças, paredes que se cruzam em T e paredes desenhadas como duas linhas (as duas faces) ainda não são tratadas.
+- Imagem: ver a seção própria (só paredes ortogonais, um contorno, sem móveis).
 - Polilinhas com arco são recusadas. Blocos (`INSERT`) de porta/janela e cotas escritas (OCR) não são lidos.
 
 - Só paredes retas; paredes curvas não estão previstas.

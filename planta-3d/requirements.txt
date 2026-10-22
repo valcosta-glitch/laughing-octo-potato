@@ -1,2 +1,6 @@
 ezdxf>=1.3
 jsonschema>=4.18
+numpy>=1.24
+Pillow>=10.1
+# opcional, só para tools/imagem_classificar_claude.py (etapa de I.A., não executada por quem a escreveu):
+# anthropic>=0.40
