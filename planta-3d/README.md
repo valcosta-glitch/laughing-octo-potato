@@ -86,7 +86,7 @@ O que é desenhado: paredes com cantos em esquadria; piso (laje de 100 mm); port
 
 **Medidas que o renderizador assume (não vêm do JSON, confira):** batente 40 mm, caixilho 40 mm, folha 35 mm, vidro 6 mm, piso 100 mm, fundo dos móveis 6 mm, zócalo recuado 50 mm, folga de porta 3 mm, tampo do balcão na mesma chapa do corpo (com 20 mm de avanço). Cores dos MDFs são fixas (as texturas do JSON ainda não são aplicadas).
 
-Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos fechados e as posições conferem com o JSON. **Não** foi conferido visualmente (o ambiente bloqueia o download da miniatura): abra o `.skp` e confira.
+Testado no conector com a cozinha de exemplo: todas as peças saem como sólidos fechados e as posições conferem com o JSON. A miniatura do `save_model` vem em base64 (`thumbnail_base64`) e pode ser decodificada para uma imagem; ela mostrou porta, janela com vidro, piso e, por dentro da janela, os móveis. Só a vista de abertura foi conferida assim: as cinco cenas ortográficas não foram vistas, abra o `.skp` para conferi-las. O link de download não é acessível a partir do ambiente de nuvem (política de rede).
 
 Limites: usa só o primeiro pavimento; só os blocos `balcao_2_portas` e `aereo_2_portas` têm desenho; a "Planta" é vista de cima, sem plano de corte (o conector não expõe `SectionPlane`); sem ferragens, puxadores, prateleiras nem furação.
 
